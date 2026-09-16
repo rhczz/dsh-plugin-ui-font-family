@@ -1,0 +1,137 @@
+{
+  "name": "dsh-plugin-ui-font-family",
+  "version": "0.3.0",
+  "description": "DeepSeek Harness web plugin: a Font row in the General settings section, with built-in presets, the fonts installed on your machine, and font files you upload",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-theme"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsdown",
+    "prepare": "tsc -p tsconfig.json && tsdown",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "lint": "oxlint",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "watch": "tsdown --watch"
+  },
+  "dependencies": {
+    "fontkit": "^2.0.4"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-home-paths": "^0.1.6-alpha.1",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.6-alpha.1",
+    "@deepseek-ai/dsh-settings": "^0.1.6-alpha.1",
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.6-alpha.1",
+    "@deepseek-ai/dsh-client-connection": "^0.1.6-alpha.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.6-alpha.1",
+    "@deepseek-ai/dsh-client-store": "^0.1.6-alpha.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.6-alpha.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.6-alpha.1",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.1.6-alpha.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.6-alpha.1",
+    "@deepseek-ai/dsh-client-ui-theme": "^0.1.6-alpha.1",
+    "@deepseek-ai/dsh-home-paths": "^0.1.6-alpha.1",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.6-alpha.1",
+    "@deepseek-ai/dsh-settings": "^0.1.6-alpha.1",
+    "@deepseek-ai/schemastery": "^3.18.2",
+    "@shikijs/langs": "^4.4.3",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/fontkit": "^2.0.9",
+    "@types/node": "^22.20.0",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "^18.3.7",
+    "@vitest/coverage-v8": "^4.1.8",
+    "anser": "^2.3.5",
+    "clsx": "^2.0.0",
+    "diff": "^9.0.0",
+    "immer": "^10.2.0",
+    "jsdom": "^29.1.1",
+    "katex": "^0.16.47",
+    "lightningcss": "^1.32.0",
+    "mdast-util-from-markdown": "^2.0.3",
+    "mdast-util-gfm": "^3.1.0",
+    "mdast-util-math": "^3.0.0",
+    "micromark-core-commonmark": "^2.0.3",
+    "micromark-extension-gfm": "^3.0.0",
+    "micromark-extension-math": "^3.1.0",
+    "micromark-factory-space": "^2.0.1",
+    "micromark-util-character": "^2.1.1",
+    "micromark-util-classify-character": "^2.0.1",
+    "micromark-util-sanitize-uri": "^2.0.1",
+    "micromark-util-symbol": "^2.0.1",
+    "oxlint": "^1.76.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.3.1",
+    "shiki": "^4.4.3",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8",
+    "zustand": "^4.5.7"
+  },
+  "files": [
+    "lib/*.js",
+    "lib/*.js.map",
+    "lib/*.d.ts",
+    "lib/client/**/*.d.ts",
+    "cordis.patch.yml",
+    "README.md",
+    "DEVELOPING.md",
+    "assets/*.png"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rhczz/dsh-plugin-ui-font-family.git"
+  },
+  "homepage": "https://github.com/rhczz/dsh-plugin-ui-font-family#readme",
+  "bugs": {
+    "url": "https://github.com/rhczz/dsh-plugin-ui-font-family/issues"
+  },
+  "engines": {
+    "node": "^22.19 || >=24"
+  },
+  "packageManager": "pnpm@11.7.0",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "font",
+    "font-family",
+    "web"
+  ]
+}

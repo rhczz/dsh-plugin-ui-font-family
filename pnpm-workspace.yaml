@@ -1,0 +1,11 @@
+# This package is its own workspace root: it is developed and published
+# independently of any DeepSeek Harness checkout, so pnpm must not walk up and
+# find someone else's workspace file.
+packages:
+  - .
+
+# pnpm blocks lifecycle scripts by default. lightningcss compiles the CSS
+# Modules during the build and its install script fetches the platform binary,
+# so it is expected to run.
+allowBuilds:
+  lightningcss: true

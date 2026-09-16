@@ -1,0 +1,25 @@
+# 本包的 bundle 覆盖层：profile 的 `dsh.profile.bundles` 列到本包时应用。
+#
+# 用法（别人装你的插件时发生的事）：
+#   dsh plugin --profile web add <本包>
+# 之后 profile 的 package.json 里多出一条依赖，`dsh.profile.bundles` 里多出本包名，
+# 于是这张 patch 被打进配置树。
+#
+# 和根目录 cordis.yaml 的区别只在 `name` 怎么解析：
+# - cordis.yaml 指 './src/index.ts'，给仓库内 `--patch` 开发用（dsh 以 tsx 跑源码）；
+# - 本文件指包名，给安装后的场景用 —— 包装在 profile 的 node_modules 里，
+#   Node 解析得到 lib/index.js。所以发布前必须先 build。
+#
+# `insert` 往条目列表里新增一行：`id` 是本行的稳定标识（别人可以在自己的
+# cordis.patch.yml 里按这个 id 覆盖它），`name` 是模块位置。
+# 全部 config 字段都可省略，取值与默认值见 README 的「配置项」一节：
+#
+#   - insert:
+#       - id: ui-font-family
+#         name: dsh-plugin-ui-font-family
+#         config:
+#           fontDir: /srv/dsh/fonts
+#
+- insert:
+    - id: ui-font-family
+      name: dsh-plugin-ui-font-family

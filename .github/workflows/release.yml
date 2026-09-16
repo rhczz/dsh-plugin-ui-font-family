@@ -1,0 +1,96 @@
+name: Release
+
+# Publishing is a tag and only a tag:
+#
+#   npm version 0.3.1 --no-git-tag-version   # or edit package.json
+#   git commit -am "Release 0.3.1"
+#   git tag v0.3.1 && git push origin main v0.3.1
+#
+# The run attaches the packed tarball to a GitHub release, which is the file
+# the README's one-line install points at.
+on:
+  push:
+    tags: ['v*']
+
+# Releases are never cancelled halfway: a tag push is deliberate, and a
+# half-published release is worse than a slow one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: release ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gh builds the release notes from the history back to the last tag.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # A tag that disagrees with the manifest would publish a tarball whose
+      # name, its own package.json, and the release all claim different
+      # versions, and `dsh plugin add` resolves the name.
+      - name: Check the tag names the manifest version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${version}"
+            exit 1
+          fi
+
+      # Never publish something this repository's own gates reject.
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Test
+        run: pnpm run test:coverage
+
+      - name: Pack
+        run: |
+          pnpm pack --out "dsh-plugin-ui-font-family-${GITHUB_REF_NAME#v}.tgz"
+
+      - name: Check the tarball carries the plugin
+        run: |
+          tarball="dsh-plugin-ui-font-family-${GITHUB_REF_NAME#v}.tgz"
+          tar -tzf "${tarball}" | tee contents.txt
+          status=0
+          for entry in package/package.json package/lib/index.js package/lib/client.js package/cordis.patch.yml; do
+            grep -qx "${entry}" contents.txt || { echo "::error::${entry} is missing from the tarball"; status=1; }
+          done
+          exit "${status}"
+
+      # Re-running a failed release job uploads over the asset instead of
+      # failing on the release it already created.
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          asset="dsh-plugin-ui-font-family-${GITHUB_REF_NAME#v}.tgz"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" "${asset}" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "${asset}" \
+              --title "${GITHUB_REF_NAME}" \
+              --generate-notes \
+              --verify-tag
+          fi

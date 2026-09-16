@@ -1,0 +1,26 @@
+# Keeps the two things that rot quietly up to date: the actions the workflows
+# pin, and the platform packages this plugin tracks. Grouped and monthly, so a
+# bump arrives as one reviewable pull request instead of a stream of them.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      # One pull request for the host packages: they move together, and a
+      # partial bump is the case worth avoiding.
+      deepseek-ai:
+        patterns: ['@deepseek-ai/*']
+      dev:
+        patterns: ['*']
+        exclude-patterns: ['@deepseek-ai/*']

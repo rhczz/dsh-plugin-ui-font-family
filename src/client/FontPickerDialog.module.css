@@ -1,0 +1,92 @@
+/* Font picker: search field over grouped, self-previewing option rows. */
+
+/* Wider than the default card: font names are the content here, and they are
+ * previewed in their own face, which is wider than the UI font. */
+.picker {
+  width: min(460px, 100%);
+}
+
+/* The list is the dialog's only scrolling region, so the search field, the
+ * title and the footer stay put however many fonts the host has installed. */
+.groups {
+  display: flex;
+  flex-direction: column;
+  margin-top: 12px;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Sticky, so the catalogue a row belongs to stays named while its section
+ * scrolls. The opaque fill hides the rows passing underneath it. */
+.groupLabel {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 16px 10px 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.groupLabel:first-child {
+  padding-top: 4px;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.option:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.option:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+
+.optionSelected {
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+/* Drawn in the font it names, so it must not let a wide face resize the row. */
+.optionName {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.check {
+  flex: none;
+  color: var(--dsw-alias-brand-primary);
+}
+
+.note {
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Keep the footer's management entry away from the two closing actions. */
+.leadAction {
+  margin-right: auto;
+}

@@ -1,0 +1,87 @@
+name: CI
+
+# Pushes to the default branch and every pull request against it. Tags are the
+# release workflow's business — it re-runs these same checks before it
+# publishes, so nothing is released on the strength of a green branch alone.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer push to the same ref makes the older run's answer worthless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both ends of the engines range: the oldest supported line and the
+        # newest. A failure on one is a real incompatibility, not a flake, so
+        # one leg failing never cancels the other.
+        node: ['22.x', '24.x']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
+
+      # Before the tests: the packaging spec walks the built lib/.
+      - name: Build
+        run: pnpm run build
+
+      - name: Test
+        run: pnpm run test:coverage
+
+  package:
+    name: package
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Pack
+        run: pnpm pack
+
+      # What the tarball carries is what a user installs, so the listing is
+      # part of the run's evidence rather than something to take on trust.
+      - name: List the tarball
+        run: tar -tzf dsh-plugin-ui-font-family-*.tgz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-plugin-ui-font-family-tarball
+          path: dsh-plugin-ui-font-family-*.tgz
+          if-no-files-found: error
