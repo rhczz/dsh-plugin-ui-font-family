@@ -1,6 +1,6 @@
 # Keeps the two things that rot quietly up to date: the actions the workflows
-# pin, and the platform packages this plugin tracks. Grouped and monthly, so a
-# bump arrives as one reviewable pull request instead of a stream of them.
+# pin, and the packages that are free to move. Grouped and monthly, so a bump
+# arrives as one reviewable pull request instead of a stream of them.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -17,10 +17,30 @@ updates:
       interval: monthly
     open-pull-requests-limit: 3
     groups:
-      # One pull request for the host packages: they move together, and a
-      # partial bump is the case worth avoiding.
-      deepseek-ai:
-        patterns: ['@deepseek-ai/*']
       dev:
         patterns: ['*']
-        exclude-patterns: ['@deepseek-ai/*']
+    ignore:
+      # These follow the host, not the registry. The browser half runs inside
+      # the shell's own React and shares the shell's single store engine, so a
+      # major here would put two copies in one page.
+      - dependency-name: react
+        update-types: ['version-update:semver-major']
+      - dependency-name: react-dom
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/react'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/react-dom'
+        update-types: ['version-update:semver-major']
+      - dependency-name: zustand
+        update-types: ['version-update:semver-major']
+      - dependency-name: immer
+        update-types: ['version-update:semver-major']
+      # The host packages have to be the version line the mounted dsh ships;
+      # moving them is a deliberate step, documented in DEVELOPING.md.
+      - dependency-name: '@deepseek-ai/*'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      # The compiler and its type definitions track the host's too.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
