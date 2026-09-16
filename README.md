@@ -24,13 +24,27 @@
 
 先要有一个能跑的 DeepSeek Harness（`dsh` 命令可用）。把下面的 `web` 换成你实际用的 profile 名即可。
 
+### 从 npm 装（推荐）
+
+```sh
+dsh plugin --profile web add dsh-plugin-ui-font-family
+```
+
+一条命令，装的是发布时构建好的产物：不在你机器上执行任何构建脚本，不需要 `allowBuilds`。想固定版本就带上版本号：
+
+```sh
+dsh plugin --profile web add dsh-plugin-ui-font-family@0.3.0
+```
+
 ### 从 GitHub 装
+
+npm 上只有发布过的版本；要跟主分支最新代码用这条：
 
 ```sh
 dsh plugin --profile web add github:rhczz/dsh-plugin-ui-font-family
 ```
 
-想钉住版本就带上 commit：
+想钉住某个 commit：
 
 ```sh
 dsh plugin --profile web add github:rhczz/dsh-plugin-ui-font-family#<commit>
@@ -47,7 +61,7 @@ allowBuilds:
 
 装完重启 `dsh web`。
 
-### 从 tgz 装（不执行任何构建脚本，最省事）
+### 从 tgz 装（从发布页直接下）
 
 ```sh
 dsh plugin --profile web add https://github.com/rhczz/dsh-plugin-ui-font-family/releases/download/v0.3.0/dsh-plugin-ui-font-family-0.3.0.tgz

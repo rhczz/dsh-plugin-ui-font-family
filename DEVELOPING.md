@@ -413,14 +413,39 @@ tag 必须写成 `v<版本号>`（`release.yml` 会校验），tgz 会以
 
 `release.yml` 是幂等的：重跑一次会 `--clobber` 覆盖已上传的附件，不会因为 Release 已存在而失败。
 
+### 发到 npm
+
+这一步目前是**手动**的：账号开了通行密钥（`auth-and-writes`），发布要在浏览器里过一次验证，
+脚本代替不了。
+
+```sh
+cd dsh-plugin-ui-font-family
+npm publish     # 先跑 prepare 构建 lib/，再上传；浏览器里过一下验证
+```
+
+公开范围由清单里的 `publishConfig.access: "public"` 决定，命令行上不用再写 `--access public`。
+发完确认两件事：
+
+```sh
+npm view dsh-plugin-ui-font-family version                # 期望与 tag 一致
+dsh plugin --profile web add dsh-plugin-ui-font-family    # 不需要 allowBuilds
+```
+
+**顺序**：先推 tag 让 `release.yml` 出 Release，再发 npm，两边版本号必须一致。npm 上的版本一旦
+发出去就不能重发（72 小时内可以撤回，之后不行），所以发之前先 `npm publish --dry-run` 看一眼
+文件清单和体积。
+
+要把这一步也交给 CI，需要先在 npmjs.com 上给这个包配好 trusted publisher（GitHub Actions +
+本仓库的 workflow 文件名），再给 workflow 加 `permissions: id-token: write` 并让它跑
+`npm publish`——那样就不再需要任何长期 token。首次发布仍然要手动或用一次性 token 引导。
+
 ## 发布前
 
 发到 GitHub 当插件仓库时，用户侧只需要 `dsh plugin add <地址>`；下面这些是本仓库自己要做完的事。
 
-- 补一个 `LICENSE` 文件（`package.json` 已声明 MIT，但仓库里还没有正文）。
-- `package.json` 里现在是 `"private": true`，防止误发布到 npm。只发 GitHub 的话可以不动；
-  要发 npm 就先改成自己的 scope（例如 `@your-name/dsh-plugin-ui-font-family`）并删掉这一行；
-  `tsdown.config.ts` 里的模块 id 是从 `package.json` 读的，不用改。
+- `package.json` 是公开可发布的（无 `private`，`publishConfig.access: "public"`），包名无 scope。
+  要改成 scoped 名（`@your-name/...`）只需要改 `name`：`tsdown.config.ts` 里的模块 id 是从
+  `package.json` 读的，不用跟着改；但 README 里的安装命令和 `dsh` 清单里的引用名要一起改。
 - 发布前先 `npm pack --dry-run` 看一遍文件清单，或者直接 `pnpm test` —— `tests/package-files.spec.ts`
   已经把「`files` 是否漏掉入口 import 的兄弟模块」变成了一条会失败的用例。
 - `@deepseek-ai/*` 一律进 `peerDependencies`（+ `devDependencies`），不要进 `dependencies`：
@@ -436,5 +461,6 @@ tag 必须写成 `v<版本号>`（`release.yml` 会校验），tgz 会以
   在用户机器上执行 —— 用 `npm install` 装一遍 `dependencies` + `devDependencies` + `peerDependencies`
   再构建，几十秒起步。pnpm 默认拦这类脚本，用户要在 profile 的 `pnpm-workspace.yaml` 里加
   `allowBuilds`（`dsh plugin` 失败时会把该写的 key 原样打出来）。不想让用户碰这一步，
-  就发一个 tag，让 `release.yml` 把 tgz 挂到 Release 上让人装 —— 那条路不跑任何脚本。
+  就发 npm（`dsh plugin add dsh-plugin-ui-font-family` 装的是预构建产物），或者发一个 tag，
+  让 `release.yml` 把 tgz 挂到 Release 上 —— 这两条路都不跑任何安装期脚本。
 - `pnpm-lock.yaml` 必须提交：CI 和 release 都跑 `--frozen-lockfile`。
