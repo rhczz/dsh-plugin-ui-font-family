@@ -144,7 +144,8 @@ describe('storing a font', () => {
     expect(calls[0]?.url).toBe(FONT_COLLECTION_ROUTE)
     expect(calls[0]?.init.method).toBe('POST')
     expect(calls[0]?.init.body).toBe(bytes)
-    expect((calls[0]?.init.headers as Record<string, string>)['content-type']).toBe('application/octet-stream')
+    expect((calls[0]?.init.headers as Record<string, string> | undefined)?.['content-type'])
+      .toBe('application/octet-stream')
   })
 
   it('surfaces the Host reason for a file it would not store', async () => {

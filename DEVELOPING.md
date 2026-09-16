@@ -62,6 +62,11 @@ pnpm run test:coverage  # CI 用的门禁：语句/函数/行 100%、分支 96%
 `lib/index.js`，装完的插件在第一次 import 就 `MODULE_NOT_FOUND`。在干净检出上直接
 `pnpm test` 会因为 `lib/` 不存在而失败，这是有意的。CI 的顺序同样是先 build 再 test。
 
+**lint 必须用本目录的 `.oxlintrc.json`**：插件目录嵌在 dsh 检出里时，oxlint 会往上找到
+dsh 根的配置（`correctness: off`，还忽略 `**/*.config.ts`），本地会报「0 warning」而
+CI（独立检出、只有本目录的配置）报出真问题。所以配置写死在本目录，两边一致；
+`correctness` 设为 `error`，warning 不留着过夜。
+
 315 个用例，覆盖 `src/**` 全部文件（不是「被 import 到的文件」）。语句、函数、行都是
 **100%**，分支 96.39%——剩下十几个走不到的分支：`??` 兜底、`String(error)` 兜底、
 `req.url ?? '/'` 这类防御性写法，以及下面「已知限制」里那条没测的集合分支。
@@ -289,6 +294,7 @@ cordis.patch.yml          bundle 覆盖层（装进 profile 时用，行的 name
 cordis.yaml               --patch 覆盖层（开发用，行的 name 是 ./src/index.ts）
 tsdown.config.ts          复现惰性 CJS 工厂格式的打包配置
 vitest.config.ts          jsdom/node 环境、覆盖率门禁、primitives 内联
+.oxlintrc.json            lint 规则（本目录自带，不继承 dsh 检出的配置）
 pnpm-workspace.yaml       本包自己的 workspace 根（不往上找别人的）+ 构建脚本放行
 pnpm-lock.yaml            CI 跑 --frozen-lockfile，必须提交
 ```

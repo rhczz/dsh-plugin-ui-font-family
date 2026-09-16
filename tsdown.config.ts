@@ -2,10 +2,10 @@
  * 打包配置：产出客户端模块系统要求的「惰性 CJS 工厂」构件。
  *
  * 为什么不能直接用官方共享预设 `clientBundle()`：
- * 那个预设内部要用 globSync('packages/​*​/​*​/package.json') 查包清单来算 external，
+ * 那个预设内部要用 globSync 扫 `packages/<组>/<包>/package.json` 查包清单来算 external，
  * 仓库外的包不在这个 glob 里，会直接抛
- * 「tsdown: no packages/*​/*​/package.json declares the name ...」。
- * 官方 cookbook（docs/cookbook/adding-a-settings-card.md §Packaging）也写明了：
+ * 「tsdown: no packages/<组>/<包>/package.json declares the name ...」。
+ * 官方 cookbook（docs/cookbook/adding-a-settings-card.md 的 Packaging 一节）也写明了：
  * 没有对外发布的预设，仓库外的包必须自己复现同样的产物格式。
  *
  * 产物必须满足两条硬约束，否则页面加载时会静默失败：

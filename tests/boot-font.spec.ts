@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { runInThisContext } from 'node:vm'
 import { afterEach, describe, expect, it } from 'vitest'
 import { bootFontInjection } from '../src/boot-font.ts'
 import { FONT_FAMILY_PROPERTY } from '../src/font-selection.ts'
@@ -21,7 +22,7 @@ function declareHarnessStack(stack: string): void {
 
 /** Run one generated row the way the browser runs it. */
 function run(families: string): void {
-  new Function(bootFontInjection(families).text)()
+  runInThisContext(bootFontInjection(families).text)
 }
 
 /** @returns the property as the rendered document carries it. */

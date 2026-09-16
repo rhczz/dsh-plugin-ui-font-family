@@ -122,13 +122,21 @@ async function hostAnswer(input: string): Promise<unknown> {
   return { ok: true, status: 200, json: async () => body }
 }
 
+/** One request the runtime sent, in the order it sent them. */
+interface SentRequest {
+  url: string
+  method: string
+}
+
+/** Every request the runtime sent during the current case. */
+const sent: SentRequest[] = []
+
 /**
  * @param method - HTTP method to look for.
  * @returns the first request the runtime sent with it, or undefined.
  */
-function issued(method: string): [string, RequestInit | undefined] | undefined {
-  const call = vi.mocked(fetch).mock.calls.find(([, init]) => init?.method === method)
-  return call === undefined ? undefined : [String(call[0]), call[1]]
+function issued(method: string): SentRequest | undefined {
+  return sent.find(request => request.method === method)
 }
 
 let mounted: Mounted
@@ -139,7 +147,11 @@ beforeEach(() => {
   const style = document.createElement('style')
   style.textContent = `:root { ${FONT_FAMILY_PROPERTY}: ${HARNESS_STACK} }`
   document.head.appendChild(style)
-  vi.stubGlobal('fetch', vi.fn(hostAnswer))
+  sent.length = 0
+  vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
+    sent.push({ url: String(input), method: init?.method ?? 'GET' })
+    return hostAnswer(input)
+  }))
   mounted = mount()
 })
 
@@ -237,22 +249,22 @@ describe('the plugin body', () => {
   it('reloads the catalogue on demand', async () => {
     const actions = actionsOf(mounted, vi.fn())
     ;(actions.reload as () => void)()
-    await vi.waitFor(() => { expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2) })
-    expect(String(vi.mocked(fetch).mock.calls[1]?.[0])).toContain(FONT_CATALOG_ROUTE)
+    await vi.waitFor(() => { expect(sent).toHaveLength(2) })
+    expect(sent[1]?.url).toContain(FONT_CATALOG_ROUTE)
   })
 
   it('stores a file the row uploads, under the collection route', async () => {
     const actions = actionsOf(mounted, vi.fn())
     ;(actions.upload as (file: File) => void)(new File([new Uint8Array([0, 1, 2, 3])], 'Example.ttf'))
-    await vi.waitFor(() => { expect(issued('POST')?.[0]).toContain(FONT_COLLECTION_ROUTE) })
-    expect(issued('POST')?.[0]).not.toContain('Example.ttf')
+    await vi.waitFor(() => { expect(issued('POST')).toBeDefined() })
+    expect(issued('POST')?.url).toContain(FONT_COLLECTION_ROUTE)
+    expect(issued('POST')?.url).not.toContain('Example.ttf')
   })
 
   it('deletes the stored font the row names', async () => {
     const actions = actionsOf(mounted, vi.fn())
     ;(actions.remove as (id: string) => void)('Example-1a2b3c4d.ttf')
-    await vi.waitFor(() => {
-      expect(issued('DELETE')?.[0]).toContain(`${FONT_COLLECTION_ROUTE}/Example-1a2b3c4d.ttf`)
-    })
+    await vi.waitFor(() => { expect(issued('DELETE')).toBeDefined() })
+    expect(issued('DELETE')?.url).toContain(`${FONT_COLLECTION_ROUTE}/Example-1a2b3c4d.ttf`)
   })
 })

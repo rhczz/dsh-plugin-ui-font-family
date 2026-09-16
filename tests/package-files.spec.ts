@@ -30,19 +30,40 @@ const manifest = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8'))
 /** Relative import or re-export specifiers in one emitted module. */
 const RELATIVE_SPECIFIER = /(?:\bfrom|\bimport)\s*\(?\s*['"](\.[^'"]+)['"]/g
 
+/** Characters that mean something to a regular expression. */
+const REGEXP_SPECIAL = /[.+^${}()|[\]\\]/
+
 /**
  * Translate one `files` pattern into the matcher npm applies: `**` spans
- * directories, `*` and `?` stay inside one.
+ * directories, `*` and `?` stay inside one path segment.
  * @param pattern - pattern as written in the manifest.
  * @returns the equivalent anchored regular expression.
  */
 function toRegExp(pattern: string): RegExp {
-  const body = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*\/|\*\*|\*/g, match => (match === '**/' ? '\u0000' : match === '**' ? '\u0001' : '\u0002'))
-    .replace(/\u0000/g, '(?:[^/]+/)*')
-    .replace(/\u0001/g, '.*')
-    .replace(/\u0002/g, '[^/]*')
+  let body = ''
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index]
+    if (char === '*') {
+      if (pattern[index + 1] !== '*') {
+        body += '[^/]*'
+        continue
+      }
+      index += 1
+      // `**/` spans whole directories; a `**` with nothing after it spans all.
+      if (pattern[index + 1] === '/') {
+        index += 1
+        body += '(?:[^/]+/)*'
+      } else {
+        body += '.*'
+      }
+      continue
+    }
+    if (char === '?') {
+      body += '[^/]'
+      continue
+    }
+    body += char !== undefined && REGEXP_SPECIAL.test(char) ? `\\${char}` : char
+  }
   return new RegExp(`^${body}$`)
 }
 

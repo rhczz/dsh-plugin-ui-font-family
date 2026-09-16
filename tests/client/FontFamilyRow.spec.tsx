@@ -35,7 +35,7 @@ const t = ((key: string, params?: Record<string, unknown>) => {
  */
 function bindStore(instance: RowInstance): FontFamilyRowComponentProps['useStore'] {
   const hook = <T,>(selector: (state: FontRowState) => T): T =>
-    useSyncExternalStore(instance.subscribe, () => selector(instance.getSnapshot()))
+    useSyncExternalStore(listener => instance.subscribe(listener), () => selector(instance.getSnapshot()))
   return hook as unknown as FontFamilyRowComponentProps['useStore']
 }
 

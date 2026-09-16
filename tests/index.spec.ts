@@ -223,6 +223,12 @@ describe('the plugin body', () => {
   async function mount(config: Config = {}): Promise<{ host: TestHost; home: string }> {
     const home = config.dshHome ?? await createHome()
     const host = makeHost()
+    // `Config` names both the composition entry interface and the schema value
+    // that validates it, so the type-aware pass reads this spread as spreading
+    // a class instance. It is a plain record, and forwarding its optional
+    // fields is what the fixture is for (`exactOptionalPropertyTypes` rules out
+    // passing them one by one).
+    // oxlint-disable-next-line typescript/no-misused-spread -- no prototype to lose.
     apply(host.ctx, { ...config, dshHome: home, scanSystemFonts: config.scanSystemFonts ?? false })
     return { host, home }
   }
