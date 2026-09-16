@@ -2,9 +2,11 @@
   "name": "dsh-plugin-ui-font-family",
   "version": "0.3.0",
   "description": "DeepSeek Harness web plugin: a Font row in the General settings section, with built-in presets, the fonts installed on your machine, and font files you upload",
-  "private": true,
   "type": "module",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "exports": {
