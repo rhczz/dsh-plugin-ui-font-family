@@ -67,6 +67,10 @@ dsh 根的配置（`correctness: off`，还忽略 `**/*.config.ts`），本地�
 CI（独立检出、只有本目录的配置）报出真问题。所以配置写死在本目录，两边一致；
 `correctness` 设为 `error`，warning 不留着过夜。
 
+lint 是 type-aware 的（配置里 `typeAware: true`），所以 `oxlint-tsgolint` 也在
+`devDependencies` 里：这是 oxlint 的类型检查后端，装在别处解析不到，CI 会直接报
+「Failed to find tsgolint executable」。它的版本号和 oxlint 分开走，升级时一起看。
+
 315 个用例，覆盖 `src/**` 全部文件（不是「被 import 到的文件」）。语句、函数、行都是
 **100%**，分支 96.39%——剩下十几个走不到的分支：`??` 兜底、`String(error)` 兜底、
 `req.url ?? '/'` 这类防御性写法，以及下面「已知限制」里那条没测的集合分支。
