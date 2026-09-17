@@ -1,7 +1,6 @@
 /**
- * The locale namespace this plugin owns. `zh` is the single source of the key
- * set and `en` is constrained to it, so a missing or extra translation fails
- * the build instead of reaching a user.
+ * The locale namespace this plugin owns. `zh` is the key-set source of truth and
+ * `en` is checked against it, so a missing or extra translation fails the build.
  * @module dsh-plugin-ui-font-family/client/locales
  */
 
@@ -11,13 +10,13 @@ export const FONT_LOCALE_NAMESPACE = 'ui-font-family'
 /** Simplified-Chinese dictionary; also the source of the key set. */
 export const zh = {
   'fontFamily.title': '字体',
-  'fontFamily.description': '设置界面与正文使用的字体',
+  'fontFamily.description': '界面与正文使用的字体',
   'fontFamily.trigger': '选择字体',
-  'fontFamily.missing': '所选字体已不可用，暂用默认字体显示',
+  'fontFamily.missing': '所选字体不可用，已回退到默认字体',
   'fontFamily.unknownName': '未知字体',
 
   'group.presets': '预设',
-  'group.uploaded': '我的字体',
+  'group.uploaded': '已上传',
   'group.system': '系统字体',
 
   'preset.default': '默认',
@@ -28,19 +27,20 @@ export const zh = {
   'action.manage': '上传与管理字体…',
   'action.reset': '恢复默认',
   'action.retry': '重新读取',
+  'action.rescan': '重新扫描系统字体',
   'action.remove': '删除',
   'action.close': '关闭',
 
   'search.placeholder': '搜索字体',
-  'search.empty': '没有匹配的字体，可在下方上传字体文件',
-  'search.truncated': '结果过多，仅显示前一部分，输入关键词可缩小范围',
+  'search.empty': '没有匹配的字体',
+  'search.truncated': '结果过多，仅显示前一部分；可用搜索缩小范围',
 
-  'system.unread': '正在读取本机字体…',
-  'system.remote': '当前不是从本机访问，无法列出服务器上的字体',
-  'system.disabled': '该部署已关闭系统字体扫描',
-  'system.empty': '没有找到可用的系统字体',
-  'system.more': '输入关键词可搜索全部 {count} 个字体',
-  'uploaded.empty': '还没有上传字体',
+  'system.unread': '正在读取系统字体…',
+  'system.remote': '当前页面不在运行 dsh 的机器上，无法列出该机器的字体',
+  'system.disabled': '此部署已关闭系统字体扫描',
+  'system.empty': '未找到可用的系统字体',
+  'system.more': '输入关键词可搜索全部 {count} 个系统字体',
+  'uploaded.empty': '尚未上传字体',
 
   'notice.uploaded': '字体已上传并启用',
   'notice.removed': '字体已删除',
@@ -52,20 +52,21 @@ export const zh = {
   'notice.tooLarge': '文件超出大小上限',
 
   'picker.title': '选择字体',
-  'picker.description': '每一行都用它自己的字体显示，选中后立即生效',
+  'picker.description': '每行以自身字体预览，选中后立即生效',
 
   'manager.title': '字体管理',
-  'manager.description': '上传的字体保存在以下目录，把字体文件直接复制进去同样会被识别：',
-  'manager.drop': '把字体文件拖到这里',
+  'manager.description': '上传的字体保存在以下目录；直接复制字体文件进去也会被识别：',
+  'manager.descriptionRemote': '上传的字体保存在运行 dsh 的机器上，目录路径只在该机器上显示。',
+  'manager.drop': '将字体文件拖到这里',
   'manager.or': '或',
   'manager.browse': '选择文件',
-  'manager.hint': '支持 .ttf .otf .woff .woff2 .ttc，需为可解析的字体文件',
+  'manager.hint': '支持 .ttf .otf .woff .woff2 .ttc，文件需可解析为字体',
   'manager.uploading': '正在上传…',
   'manager.listTitle': '已上传的字体',
   'manager.close': '关闭',
 
   'confirm.title': '删除字体',
-  'confirm.description': '删除后无法恢复。该字体正在被使用时，字体会回到默认设置。',
+  'confirm.description': '删除后无法恢复；若该字体正在使用，界面将回到默认字体',
   'confirm.cancel': '取消',
   'confirm.confirm': '删除',
 }
@@ -80,16 +81,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-/** English dictionary; the record type keeps it level with {@link zh}. */
-export const en: Record<FontKey, string> = {
+/** English dictionary, checked complete against the `zh` key set. */
+export const en = {
   'fontFamily.title': 'Font',
-  'fontFamily.description': 'Font used by the interface and message text',
+  'fontFamily.description': 'Font for the interface and conversation text',
   'fontFamily.trigger': 'Choose a font',
-  'fontFamily.missing': 'The chosen font is unavailable; the default is used instead',
+  'fontFamily.missing': 'The chosen font is unavailable; the interface uses the default',
   'fontFamily.unknownName': 'Unknown font',
 
   'group.presets': 'Presets',
-  'group.uploaded': 'My fonts',
+  'group.uploaded': 'Uploaded',
   'group.system': 'System fonts',
 
   'preset.default': 'Default',
@@ -100,18 +101,19 @@ export const en: Record<FontKey, string> = {
   'action.manage': 'Upload and manage fonts…',
   'action.reset': 'Restore default',
   'action.retry': 'Read again',
+  'action.rescan': 'Rescan installed fonts',
   'action.remove': 'Delete',
   'action.close': 'Close',
 
   'search.placeholder': 'Search fonts',
-  'search.empty': 'No font matches. Upload a font file below to add one.',
-  'search.truncated': 'Too many results; only the first part is listed, type to narrow it down',
+  'search.empty': 'No matching font',
+  'search.truncated': 'Too many results; only the first are listed — search to narrow them',
 
-  'system.unread': 'Reading the fonts installed on the host…',
-  'system.remote': 'This page is not open on the host machine, so its fonts cannot be listed',
+  'system.unread': 'Reading system fonts…',
+  'system.remote': "This page is not open on the machine running dsh, so that machine's fonts cannot be listed",
   'system.disabled': 'This deployment turned system font scanning off',
   'system.empty': 'No usable system font was found',
-  'system.more': 'Type to search all {count} installed fonts',
+  'system.more': 'Type to search all {count} system fonts',
   'uploaded.empty': 'No font has been uploaded yet',
 
   'notice.uploaded': 'Font uploaded and selected',
@@ -121,23 +123,24 @@ export const en: Record<FontKey, string> = {
   'notice.uploadFailed': 'Upload failed',
   'notice.removeFailed': 'Delete failed',
   'notice.settingsFailed': 'Could not save the setting',
-  'notice.tooLarge': 'The file is larger than the accepted limit',
+  'notice.tooLarge': 'The file exceeds the size limit',
 
   'picker.title': 'Choose a font',
-  'picker.description': 'Each row is drawn in the font it names; choosing one applies it immediately',
+  'picker.description': 'Each row previews its own font; choosing one applies it immediately',
 
   'manager.title': 'Manage fonts',
-  'manager.description': 'Uploaded fonts are kept in this directory; copying a font file into it works too:',
+  'manager.description': 'Uploaded fonts are stored in this directory; copying a font file into it also works:',
+  'manager.descriptionRemote': 'Uploaded fonts are stored on the machine running dsh; the path is shown only there',
   'manager.drop': 'Drop a font file here',
   'manager.or': 'or',
   'manager.browse': 'Choose a file',
-  'manager.hint': 'Accepts .ttf .otf .woff .woff2 .ttc, and the file must parse as a font',
+  'manager.hint': 'Accepts .ttf .otf .woff .woff2 .ttc; the file must parse as a font',
   'manager.uploading': 'Uploading…',
   'manager.listTitle': 'Uploaded fonts',
   'manager.close': 'Close',
 
   'confirm.title': 'Delete font',
-  'confirm.description': 'This cannot be undone. If the font is in use, the default is restored.',
+  'confirm.description': 'This cannot be undone. If the font is in use, the interface returns to the default.',
   'confirm.cancel': 'Cancel',
   'confirm.confirm': 'Delete',
-}
+} satisfies Record<FontKey, string>

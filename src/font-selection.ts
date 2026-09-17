@@ -1,12 +1,11 @@
 /**
  * Turning a persisted selection into the CSS installed on the document.
  *
- * Two steps, and the split is the point. {@link resolveFontProjection} decides
- * which families the user asked for, from the selection and the catalogues.
+ * {@link resolveFontProjection} decides which families the selection asks for;
  * {@link composeFontStack} places them ahead of the stack the harness defines
- * for itself, which is read from the document rather than written down here.
- * The Host's boot script and the browser's live projection both take these two
- * steps, so the two cannot install different stacks for the same document.
+ * for itself, which is read from the document. The Host's boot script and the
+ * browser's live projection both take these two steps, so the two cannot
+ * install different stacks for one document.
  * @module dsh-plugin-ui-font-family/font-selection
  */
 
@@ -19,12 +18,12 @@ import type { FontSettings } from './font-settings.ts'
  */
 export interface FontCatalogues {
   /**
-   * Family name by uploaded font id, or `undefined` while the browser has not
-   * read the Host catalogue yet.
+   * Family name by uploaded font id, or `undefined` while the catalogue has not
+   * been read.
    *
-   * The distinction matters: a loaded map that lacks the id proves the file is
-   * gone and the selection must resolve to the harness font, while an unread
-   * catalogue proves nothing and must leave the current stack alone.
+   * The distinction is load-bearing: a loaded map without the id proves the file
+   * is gone and the selection resolves to the harness font, while an unread
+   * catalogue proves nothing and leaves the current stack alone.
    */
   uploaded: ReadonlyMap<string, string> | undefined
 }
@@ -57,11 +56,18 @@ export type FontProjection =
 
 /**
  * Quote a CSS family name unless it is already a bare identifier.
+ *
+ * Both characters that carry meaning inside a quoted CSS string are escaped: a
+ * quote ends it, and a backslash escapes whatever follows, including the closing
+ * quote. Installed names have already passed the gate in `font-settings.ts`; the
+ * escapes cover a caller that does not.
  * @param name - family name as a font declares it.
  * @returns the name, quoted when it contains anything but identifier characters.
  */
 export function quoteFontFamily(name: string): string {
-  return /^[A-Za-z_][\w-]*$/.test(name) ? name : `'${name.replaceAll("'", "\\'")}'`
+  return /^[A-Za-z_][\w-]*$/.test(name)
+    ? name
+    : `'${name.replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'`
 }
 
 /**
@@ -104,15 +110,13 @@ export function resolveFontProjection(settings: FontSettings, catalogues: FontCa
  *
  * The harness stack is the tail of every installed stack, so a family this
  * plugin names is tried first and everything it cannot draw — Chinese text, an
- * emoji, a symbol, a family the machine does not have — is drawn exactly as the
- * harness would have drawn it. That is what keeps a chosen font from moving the
- * interface: the plugin adds a face, and never restates or reorders the ones the
- * harness's layout was measured for.
+ * emoji, a symbol, a missing family — is drawn as the harness draws it. The
+ * plugin adds a face and never reorders the ones the layout was measured for.
  * @param families - families the selection resolved to.
  * @param harnessStack - stack declared by the harness, read from the document.
- * @returns the stack to install, or `undefined` when the document should keep
- * the harness stack, either because nothing was chosen or because the harness
- * stack could not be read and there is no honest tail to append.
+ * @returns the stack to install, or `undefined` when the document keeps the
+ * harness stack: nothing was chosen, or the harness stack could not be read and
+ * there is no tail to append.
  */
 export function composeFontStack(families: string, harnessStack: string): string | undefined {
   if (families === '' || harnessStack === '') return undefined
@@ -120,14 +124,11 @@ export function composeFontStack(families: string, harnessStack: string): string
 }
 
 /**
- * Judge whether a selection still names a font the user can actually get.
- *
- * This is what the row reports, and it is deliberately more forgiving than
- * {@link resolveFontProjection}: a `system` selection is a CSS family name, so
- * it counts as available wherever the browser might find it, and an `upload`
- * selection counts as available until a read catalogue proves the file gone.
- * Reporting a font missing is a claim about the user's own file, so it waits
- * for evidence rather than inferring one from an incomplete read.
+ * Judge whether a selection still names a font the user can get. What the row
+ * reports, and more forgiving than {@link resolveFontProjection}: a `system`
+ * selection is a CSS family name and counts as available wherever the browser
+ * might find it, and an `upload` selection counts as available until a read
+ * catalogue proves the file gone.
  * @param settings - selection read from the settings document.
  * @param catalogues - dynamic catalogues currently known.
  * @returns whether the selection names a font that still exists.

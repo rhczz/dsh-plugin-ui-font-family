@@ -1,10 +1,8 @@
 /**
- * The browser's owner of the `@font-face` block for stored fonts.
- *
- * The Host renders the same block into the served page, so a stored font is
- * paintable at first paint. The browser takes that element over because only
- * the browser knows about a font uploaded during this session, and because the
- * rules have to come back out when the plugin unloads.
+ * The browser's owner of the `@font-face` block for stored fonts. The Host
+ * renders the same block into the served page; the browser takes that element
+ * over, because only the browser knows about a font uploaded during this session
+ * and the rules have to come out when the plugin unloads.
  * @module dsh-plugin-ui-font-family/client/font-face-style
  */
 
@@ -15,20 +13,30 @@ export class FontFaceStyle {
   private element: HTMLStyleElement | undefined
 
   /**
-   * Install the declarations for a catalogue.
-   * @param css - declarations to install. Empty retracts them, and creates
-   * nothing when no element exists yet.
+   * Install the declarations for a catalogue. Empty declarations retract the
+   * element rather than emptying it: with nothing stored there is nothing to
+   * declare, and a later upload creates the element again.
+   * @param css - declarations to install. Empty removes them.
    */
   apply(css: string): void {
-    if (css === '' && document.getElementById(FONT_FACE_STYLE_ID) === null) return
+    if (css === '') {
+      this.dispose()
+      return
+    }
     const element = this.ensure()
     if (element.textContent !== css) element.textContent = css
   }
 
-  /** Remove the element carrying this plugin's declarations. */
+  /**
+   * Remove the element carrying this plugin's declarations. The Host renders the
+   * block into the served page, so an element this instance never adopted is
+   * still this plugin's to remove; {@link ensure} names the id and type it has.
+   */
   dispose(): void {
     this.element?.remove()
     this.element = undefined
+    const rendered = document.getElementById(FONT_FACE_STYLE_ID)
+    if (rendered instanceof HTMLStyleElement) rendered.remove()
   }
 
   /**

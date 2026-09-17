@@ -5,10 +5,12 @@ import {
   FONT_SETTINGS_NAMESPACE,
   FONT_SOURCE_FIELD,
   FONT_SOURCES,
-  FontSettingsSchema,
+  isUsableFontFamilyName,
   validateFontSettings,
   type FontSettings,
 } from '../src/font-settings.ts'
+import { FontSettingsSchema } from '../src/font-settings-schema.ts'
+import { sanitizeFamilyName } from '../src/font-files.ts'
 
 /**
  * Resolve one settings section the way the settings service does.
@@ -62,6 +64,26 @@ describe('validateFontSettings', () => {
     // host that has the font and on one that does not.
     expect(() => { validateFontSettings({ source: 'system', id: 'Georgia' }) }).not.toThrow()
     expect(() => { validateFontSettings({ source: 'system', id: 'No Such Face' }) }).not.toThrow()
+    expect(() => { validateFontSettings({ source: 'system', id: 'Source Han Sans CN' }) }).not.toThrow()
+  })
+
+  it('rejects a system family name that could not be written into the page', () => {
+    // The name reaches a quoted CSS string and the served bootstrap script, so
+    // a character that ends either one is refused where the write happens
+    // rather than escaped later by whichever reader happens to notice.
+    for (const id of [
+      'Evil;</style>',
+      '</script><img src=x onerror=alert(1)>',
+      'Back\\slash',
+      "Quote'",
+      'Curly{brace}',
+      'Line\nbreak',
+      'Next\u0085line',
+      ' Padded ',
+    ]) {
+      expect(() => { validateFontSettings({ source: 'system', id }) })
+        .toThrow(/not a usable CSS family name/)
+    }
   })
 
   it('accepts an uploaded font id without reading the directory', () => {
@@ -82,5 +104,27 @@ describe('validateFontSettings', () => {
     const settings: FontSettings = { source: 'preset', id: 'comic' }
     expect(() => { validateFontSettings(settings) })
       .toThrow(new RegExp(`${FONT_SETTINGS_NAMESPACE}\\.${FONT_ID_FIELD}`))
+  })
+})
+
+describe('isUsableFontFamilyName', () => {
+  it('accepts the names fonts actually declare', () => {
+    for (const name of ['Georgia', 'Brioso Pro', 'Noto Sans CJK SC', 'Source Han Sans CN', 'Songti SC']) {
+      expect(isUsableFontFamilyName(name)).toBe(true)
+    }
+  })
+
+  it('accepts every name the file-controlled path can produce', () => {
+    // The two sides of the rule have to agree: a family name read out of an
+    // uploaded font is offered as a `system` selection in the picker, and the
+    // settings section has to admit what the picker showed.
+    for (const declared of ['Silkscreen', 'Evil;} body{display:none}', 'Back\\slash', '</script>']) {
+      expect(isUsableFontFamilyName(sanitizeFamilyName(declared))).toBe(true)
+    }
+  })
+
+  it('rejects an empty or padded name', () => {
+    expect(isUsableFontFamilyName('')).toBe(false)
+    expect(isUsableFontFamilyName(' Georgia ')).toBe(false)
   })
 })

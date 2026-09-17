@@ -1,13 +1,14 @@
 /**
- * Browser-side state of the font row: the persisted selection, both
- * catalogues, and the projected stack.
+ * Browser-side state of the font row: the persisted selection, both catalogues,
+ * and the projected stack.
  *
- * One runtime owns every mutation. It is the only caller of the Host routes
- * and the only writer of the projected property, so the row and its dialog
- * cannot disagree about what is selected or what is stored.
+ * One runtime owns every mutation. It is the only caller of the Host routes and
+ * the only writer of the projected property, so the row and its dialog cannot
+ * disagree about what is selected or stored.
  * @module dsh-plugin-ui-font-family/client/font-runtime
  */
 
+import { fileSizeText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-settings/types'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { FontSystemUnavailableReason, FontUploadSummary } from '../font-api.ts'
@@ -34,6 +35,7 @@ import {
   FontRequestError,
   uploadFontFile,
   type FontCatalog,
+  type FontCatalogReadOptions,
 } from './font-catalog.ts'
 import { FontPresenter, type ThemeTokenWriter } from './font-presenter.ts'
 
@@ -54,6 +56,17 @@ export type FontNotice =
   | 'settingsFailed'
   | 'tooLarge'
 
+/**
+ * Whether one outcome reports a failure rather than a completed action. A new
+ * code joins {@link FontNotice} and this classification together.
+ * @param notice - outcome code.
+ * @returns whether the outcome is a failure.
+ */
+export function isFontNoticeFailure(notice: FontNotice): boolean {
+  return notice === 'uploadFailed' || notice === 'removeFailed'
+    || notice === 'settingsFailed' || notice === 'tooLarge'
+}
+
 /** Immutable view of everything the settings row renders. */
 export interface FontRowSnapshot {
   /** Monotonic sequence; a consumer drops a snapshot that is not newer. */
@@ -64,8 +77,8 @@ export interface FontRowSnapshot {
   catalog: FontCatalogStatus
   /** Reason the catalogue read failed; empty unless `catalog` is `failed`. */
   catalogError: string
-  /** Absolute directory holding uploaded fonts; empty before the first read. */
-  directory: string
+  /** Absolute directory holding uploaded fonts; null before the first read and when withheld. */
+  directory: string | null
   /** Installed families, or null when the Host did not enumerate them. */
   system: readonly string[] | null
   /** Why `system` is null; null before the first successful catalogue read. */
@@ -84,6 +97,40 @@ export interface FontRowSnapshot {
   notice: FontNotice
   /** Detail behind a failed write, verbatim from the Host; empty otherwise. */
   noticeDetail: string
+}
+
+/**
+ * Render one caught value as the detail line of a notice.
+ * @param error - value a request or a write rejected with.
+ * @returns the error's message, or the value read as text.
+ */
+function errorDetail(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Path operations selecting one font. Both fields move in one write: a lone
+ * `source` would be validated against the previous `id`, so a legal switch away
+ * from a preset would be refused mid-transition.
+ * @param settings - selection to persist.
+ * @returns the operations for one validated write.
+ */
+function selectOps(settings: FontSettings): readonly SettingsPathOpView[] {
+  return [
+    { op: 'set', path: [FONT_SOURCE_FIELD], value: settings.source },
+    { op: 'set', path: [FONT_ID_FIELD], value: settings.id },
+  ]
+}
+
+/**
+ * Path operations clearing the selection, revealing the composition default.
+ * @returns the operations for one validated write.
+ */
+function clearOps(): readonly SettingsPathOpView[] {
+  return [
+    { op: 'unset', path: [FONT_SOURCE_FIELD] },
+    { op: 'unset', path: [FONT_ID_FIELD] },
+  ]
 }
 
 /** Sort uploaded fonts the way the catalogue reads, so both orders agree. */
@@ -168,13 +215,7 @@ export class FontRuntime {
     this.setNotice('', '')
     this.project()
     this.publish()
-    // One write for both fields. Two writes would validate `source` against a
-    // stale `id`, and a system family name is not a preset id, so a legal
-    // switch away from a preset would be refused mid-transition.
-    this.write([
-      { op: 'set', path: [FONT_SOURCE_FIELD], value: source },
-      { op: 'set', path: [FONT_ID_FIELD], value: id },
-    ], 'settingsFailed')
+    this.write(selectOps({ source, id }), 'settingsFailed')
   }
 
   /**
@@ -185,17 +226,18 @@ export class FontRuntime {
     this.setNotice('reset', '')
     this.project()
     this.publish()
-    this.write([
-      { op: 'unset', path: [FONT_SOURCE_FIELD] },
-      { op: 'unset', path: [FONT_ID_FIELD] },
-    ], 'settingsFailed')
+    this.write(clearOps(), 'settingsFailed')
   }
 
-  /** Read the catalogue again, e.g. after a font was installed by hand. */
-  reloadCatalog(): void {
+  /**
+   * Read the catalogue again, e.g. after a font was installed by hand.
+   * @param options - what this read asks the Host for beyond the stored fonts;
+   * only the user's own rescan asks for the installed fonts to be read again.
+   */
+  reloadCatalog(options: FontCatalogReadOptions = {}): void {
     this.catalogStatus = 'loading'
     this.publish()
-    void fetchFontCatalog(this.abort.signal)
+    void fetchFontCatalog(this.abort.signal, options)
       .then((catalog) => {
         if (this.disposed) return
         this.catalog = catalog
@@ -207,7 +249,7 @@ export class FontRuntime {
       .catch((error: unknown) => {
         if (this.disposed) return
         this.catalogStatus = 'failed'
-        this.catalogError = error instanceof Error ? error.message : String(error)
+        this.catalogError = errorDetail(error)
         // The projected stack is left alone: it came from the Host bootstrap
         // row, which had this catalogue, and falling back here would replace a
         // correct font with a guess.
@@ -216,10 +258,17 @@ export class FontRuntime {
   }
 
   /**
-   * Store one font file and select it.
+   * Store one font file and select it. A file past the Host's limit is refused
+   * before it is read, with the limit named so the user knows what to bring.
    * @param file - file the user chose or dropped.
    */
   upload(file: File): void {
+    const limit = this.catalog.maxUploadBytes
+    if (limit !== undefined && file.size > limit) {
+      this.setNotice('tooLarge', fileSizeText(limit))
+      this.publish()
+      return
+    }
     this.busy = true
     this.setNotice('', '')
     this.publish()
@@ -239,16 +288,13 @@ export class FontRuntime {
         this.setNotice('uploaded', summary.family)
         this.project()
         this.publish()
-        this.write([
-          { op: 'set', path: [FONT_SOURCE_FIELD], value: 'upload' },
-          { op: 'set', path: [FONT_ID_FIELD], value: summary.id },
-        ], 'uploadFailed')
+        this.write(selectOps({ source: 'upload', id: summary.id }), 'uploadFailed')
         this.reloadCatalog()
       })
       .catch((error: unknown) => {
         if (this.disposed) return
         this.busy = false
-        this.setNotice(failureCode(error, 'uploadFailed'), error instanceof Error ? error.message : String(error))
+        this.setNotice(failureCode(error, 'uploadFailed'), errorDetail(error))
         this.publish()
       })
   }
@@ -273,10 +319,7 @@ export class FontRuntime {
         if (this.selection.source === 'upload' && this.selection.id === id) {
           this.selection = { source: DEFAULT_FONT_SOURCE, id: DEFAULT_FONT_PRESET_ID }
           this.setNotice('removed', '')
-          this.write([
-            { op: 'unset', path: [FONT_SOURCE_FIELD] },
-            { op: 'unset', path: [FONT_ID_FIELD] },
-          ], 'removeFailed')
+          this.write(clearOps(), 'removeFailed')
         } else {
           this.setNotice('removed', '')
         }
@@ -286,7 +329,7 @@ export class FontRuntime {
       .catch((error: unknown) => {
         if (this.disposed) return
         this.busy = false
-        this.setNotice(failureCode(error, 'removeFailed'), error instanceof Error ? error.message : String(error))
+        this.setNotice(failureCode(error, 'removeFailed'), errorDetail(error))
         this.publish()
       })
   }
@@ -303,7 +346,14 @@ export class FontRuntime {
   /** Adopt the resolved settings document value and re-project. */
   private adopt(): void {
     const value = this.host.getSnapshot().value
+    const changed = value !== undefined
+      && (value.source !== this.selection.source || value.id !== this.selection.id)
     if (value !== undefined) this.selection = value
+    // Every settings write republishes each namespace, so a change resolving to
+    // the published selection needs no re-projection: re-installing the theme
+    // layer would rewrite the document for an unchanged font. The first adoption
+    // still projects, so a runtime always publishes an opening snapshot.
+    if (!changed && this.seq > 0) return
     this.project()
     this.publish()
   }
@@ -343,7 +393,7 @@ export class FontRuntime {
   private write(ops: readonly SettingsPathOpView[], code: FontNotice): void {
     void this.host.mutate(ops).catch((error: unknown) => {
       if (this.disposed) return
-      this.setNotice(code, error instanceof Error ? error.message : String(error))
+      this.setNotice(code, errorDetail(error))
       this.publish()
     })
   }

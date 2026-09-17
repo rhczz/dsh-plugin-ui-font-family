@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import { bootFontInjection } from '../src/boot-font.ts'
-import { FONT_CATALOG_ROUTE, type FontCatalogResponse } from '../src/font-api.ts'
+import { FONT_CATALOG_ROUTE, FONT_COLLECTION_ROUTE, type FontCatalogResponse } from '../src/font-api.ts'
 import { FONT_SETTINGS_NAMESPACE, type FontSettings } from '../src/font-settings.ts'
 import { fontPresetFamilies } from '../src/font-presets.ts'
 import { apply, DEFAULT_MAX_UPLOAD_BYTES, inject, resolveSpec, type Config } from '../src/index.ts'
@@ -135,11 +135,12 @@ function makeHost(): TestHost {
 /**
  * Read the inline-script text out of an index injection table.
  * @param table - rows a render collected.
- * @returns the script text of the single row this plugin contributes.
+ * @returns the script text of the one script row this plugin contributes.
  */
 function scriptText(table: readonly IndexInjection[]): string {
-  const row = table[0]
-  if (row === undefined || row.kind !== 'script') {
+  const rows = table.filter(entry => entry.kind === 'script')
+  const row = rows[0]
+  if (rows.length !== 1 || row === undefined) {
     throw new Error(`expected one inline-script row, got ${JSON.stringify(table)}`)
   }
   return row.text
@@ -236,9 +237,13 @@ describe('the plugin body', () => {
   /**
    * Answer one request through a registered route.
    * @param route - route to call.
-   * @returns the JSON body the handler wrote.
+   * @param options - request method, target, and the peer address Node would report.
+   * @returns the JSON body the handler wrote, empty for a bodyless response.
    */
-  async function answer(route: RecordedRoute): Promise<FontCatalogResponse> {
+  async function answer(
+    route: RecordedRoute,
+    options: { method?: string; url?: string; peer?: string } = {},
+  ): Promise<FontCatalogResponse | undefined> {
     let body = ''
     const res = {
       writeHead() { return res },
@@ -247,9 +252,18 @@ describe('the plugin body', () => {
         return res
       },
     }
-    // A font list is only served to the machine the Host runs on.
-    await route.handler({ method: 'GET', socket: { remoteAddress: '127.0.0.1' } }, res)
-    return JSON.parse(body) as FontCatalogResponse
+    await route.handler(
+      {
+        method: options.method ?? 'GET',
+        url: options.url ?? FONT_CATALOG_ROUTE,
+        // A client that sends neither origin header is the local tooling the
+        // same-origin guard admits; the guard itself is covered by its own spec.
+        headers: {},
+        socket: { remoteAddress: options.peer ?? '127.0.0.1' },
+      },
+      res,
+    )
+    return body === '' ? undefined : JSON.parse(body) as FontCatalogResponse
   }
 
   it('installs its settings section with the composition selection as the base layer', async () => {
@@ -261,7 +275,17 @@ describe('the plugin body', () => {
 
   it('rejects a stored section that names no shipped preset', async () => {
     const { host } = await mount()
-    expect(() => host.sections[0]?.validate({ source: 'preset', id: 'comic' })).toThrow()
+    expect(() => { host.sections[0]?.validate({ source: 'preset', id: 'comic' }) }).toThrow()
+  })
+
+  it('rejects a stored family name that could not be written into the page', async () => {
+    // The settings service runs this hook on every write and on every stored
+    // section it resolves, so a name that would end the bootstrap script is
+    // refused where it is written rather than escaped at each render.
+    const { host } = await mount()
+    expect(() => { host.sections[0]?.validate({ source: 'system', id: '</script><img src=x>' }) })
+      .toThrow(/not a usable CSS family name/)
+    expect(() => { host.sections[0]?.validate({ source: 'system', id: 'Georgia' }) }).not.toThrow()
   })
 
   it('registers both of its routes', async () => {
@@ -325,24 +349,52 @@ describe('the plugin body', () => {
     expect(styleText(host.render())).toBe('')
   })
 
-  it('declares every stored font, so the browser can paint it at first paint', async () => {
+  it('declares the selected stored font, so the browser can paint it at first paint', async () => {
     const home = await createHome()
     const fontDir = join(home, 'fonts')
-    // The catalogue is read once at load, so the font has to be in place before
-    // the plugin is applied — the same position a hand-copied file is in.
+    // The selection is read before the render that needs it, so the font has to
+    // be in place first — the same position a hand-copied file is in.
     await mkdir(fontDir, { recursive: true })
     await copyFile(FIXTURE, join(fontDir, 'Silkscreen-Regular.ttf'))
     const host = makeHost()
     apply(host.ctx, { dshHome: home, scanSystemFonts: false })
+    host.sections[0]?.setSource(() => ({ source: 'upload', id: 'Silkscreen-Regular.ttf' }))
+    host.sections[0]?.onChange()
+    // A second report of the same selection reads nothing again.
+    host.sections[0]?.onChange()
 
     await vi.waitFor(() => { expect(styleText(host.render())).toContain('@font-face') })
     const css = styleText(host.render())
     expect(css).toContain('font-family:Silkscreen')
-    expect(css).toContain('/api/ui-font-family/fonts/')
+    expect(css).toContain('/api/ui-font-family/fonts/Silkscreen-Regular.ttf')
     // The row lands in the head, where a face declaration belongs, and cannot
     // close the element carrying it.
     expect(css).not.toContain('<')
     expect(host.render().find(row => row.kind === 'style')).toBeDefined()
+    expect(scriptText(host.render())).toContain('Silkscreen')
+  })
+
+  it('reads only the selected stored font, never the ones nobody selected', async () => {
+    const home = await createHome()
+    const fontDir = join(home, 'fonts')
+    await mkdir(fontDir, { recursive: true })
+    await copyFile(FIXTURE, join(fontDir, 'Silkscreen-Regular.ttf'))
+    // A file nothing can parse. Reading the directory reports it, so empty
+    // warnings show the render read one file rather than all of them.
+    await writeFile(join(fontDir, 'broken.ttf'), 'prose wearing a font extension')
+    const host = makeHost()
+    apply(host.ctx, { dshHome: home, scanSystemFonts: false })
+    host.sections[0]?.setSource(() => ({ source: 'upload', id: 'Silkscreen-Regular.ttf' }))
+    host.sections[0]?.onChange()
+    await vi.waitFor(() => { expect(styleText(host.render())).toContain('@font-face') })
+
+    expect(host.logger.warn).not.toHaveBeenCalled()
+
+    // The catalogue request is what lists the directory, and reports the file it
+    // could not use.
+    const catalog = host.registered.find(route => route.path === FONT_CATALOG_ROUTE)
+    await answer(catalog as RecordedRoute)
+    expect(host.logger.warn.mock.calls[0]?.[0]).toMatch(/unreadable files/)
   })
 
   it('releases its registrations when the owning context is disposed', async () => {
@@ -362,20 +414,73 @@ describe('the plugin body', () => {
     const host = makeHost()
     apply(host.ctx, { dshHome: home, scanSystemFonts: false, systemFontDirs: [installed] })
 
-    // The scan runs on the first catalogue read, so this also shows the
-    // configured directories reached the index rather than the platform ones.
+    // The list this answers with is the one the configured directory holds,
+    // which is what shows the configuration reached the index rather than the
+    // platform directories.
     const catalog = host.registered.find(route => route.path === FONT_CATALOG_ROUTE)
     expect(catalog).toBeDefined()
     const body = await answer(catalog as RecordedRoute)
-    expect(body.system).toEqual(['Silkscreen'])
+    expect(body?.system).toEqual(['Silkscreen'])
   })
 
-  it('derives the bootstrap row at render time, so a change needs no reaction', async () => {
+  it('does not scan the installed fonts for a request that could never be served them', async () => {
+    const home = await createHome()
+    // A file where a font directory belongs is the one thing a scan reports, and
+    // the scan is awaited inside the request that triggers it. An absent root
+    // reports nothing.
+    const blocked = join(home, 'blocked')
+    await writeFile(blocked, 'prose wearing a directory name')
+    const host = makeHost()
+    apply(host.ctx, { dshHome: home, scanSystemFonts: false, systemFontDirs: [blocked] })
+    const catalog = host.registered.find(route => route.path === FONT_CATALOG_ROUTE)
+
+    expect((await answer(catalog as RecordedRoute, { peer: '203.0.113.9' }))?.system).toBeNull()
+    expect(host.logger.warn).not.toHaveBeenCalled()
+
+    // The first request from this machine is what reads the directories.
+    await answer(catalog as RecordedRoute)
+    expect(host.logger.warn.mock.calls[0]?.[0]).toMatch(/unreadable font directories/)
+  })
+
+  it('reports the upload limit it enforces, so the page can refuse a file first', async () => {
+    const { host } = await mount({ maxUploadBytes: 4096 })
+    const catalog = host.registered.find(route => route.path === FONT_CATALOG_ROUTE)
+    expect((await answer(catalog as RecordedRoute))?.maxUploadBytes).toBe(4096)
+  })
+
+  it('withholds the storage directory from a request that did not arrive from this machine', async () => {
+    const { host } = await mount()
+    const catalog = host.registered.find(route => route.path === FONT_CATALOG_ROUTE)
+    expect((await answer(catalog as RecordedRoute, { peer: '203.0.113.9' }))?.fontDir).toBeNull()
+  })
+
+  it('stops declaring a stored font once the deletion is reported', async () => {
+    const home = await createHome()
+    const fontDir = join(home, 'fonts')
+    await mkdir(fontDir, { recursive: true })
+    await copyFile(FIXTURE, join(fontDir, 'Silkscreen-Regular.ttf'))
+    const host = makeHost()
+    apply(host.ctx, { dshHome: home, scanSystemFonts: false })
+    host.sections[0]?.setSource(() => ({ source: 'upload', id: 'Silkscreen-Regular.ttf' }))
+    host.sections[0]?.onChange()
+    await vi.waitFor(() => { expect(styleText(host.render())).toContain('@font-face') })
+
+    // The route's write notification is what tells the Host its read is stale;
+    // the file is gone, so the next render declares nothing and the harness
+    // font stands instead of a family with no file behind it.
+    const fonts = host.registered.find(route => route.path === FONT_COLLECTION_ROUTE)
+    await answer(fonts as RecordedRoute, {
+      method: 'DELETE',
+      url: `${FONT_COLLECTION_ROUTE}/Silkscreen-Regular.ttf`,
+    })
+    await vi.waitFor(() => { expect(host.render()).toEqual([]) })
+  })
+
+  it('derives the bootstrap row at render time, so a change needs no cached row', async () => {
     const { host } = await mount()
     const before = host.render()
-    // The section's change hook has nothing cached to re-judge; a committed
-    // change reaches the row through the settings scope the client subscribes
-    // to, which is why this hook is empty.
+    // The change hook resolves the family of a stored selection; the row itself
+    // is still derived at render time from whatever the section reports then.
     host.sections[0]?.onChange()
     expect(host.render()).toEqual(before)
   })

@@ -8,8 +8,7 @@
 import { create } from 'fontkit'
 import type { Font, FontCollection } from 'fontkit'
 import { FONT_FILE_EXTENSIONS, type FontFileExtension } from './font-formats.ts'
-
-export { FONT_FILE_EXTENSIONS, type FontFileExtension } from './font-formats.ts'
+import { isUnsafeFamilyNameCharacter } from './font-settings.ts'
 
 /** Reports what a font file operation skipped, so a skip is never silent. */
 export interface FontFileLogger {
@@ -18,6 +17,16 @@ export interface FontFileLogger {
    * @param message - one line naming what was skipped and why.
    */
   warn(message: string): void
+}
+
+/**
+ * Judge whether a read failed because the entry is not there. A platform
+ * directory this machine does not have is an ordinary absence, not a fault.
+ * @param error - error a directory or file read rejected with.
+ * @returns whether the entry was absent.
+ */
+export function isMissingEntry(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
 }
 
 /**
@@ -80,43 +89,40 @@ export function detectFontFileExtension(bytes: Buffer): FontFileExtension | unde
 
 /** Distinguish a font collection from a single face. */
 function isFontCollection(font: Font | FontCollection): font is FontCollection {
-  return 'fonts' in font && Array.isArray(font.fonts)
+  return 'fonts' in font
 }
 
 /**
  * Reduce a declared family name to one that can be written into CSS safely.
  *
- * The name table is file-controlled content and the name ends up inside a
- * stylesheet, where a brace or semicolon would end the declaration and a `<`
- * would close the element carrying it. Separators and control characters
- * collapse to spaces, and the surviving name is what the browser is asked for
- * in both `@font-face` and the font stack, so the two still agree.
+ * The name table is file-controlled content and the name is written into a
+ * stylesheet, where a brace or semicolon ends the declaration and a backslash
+ * escapes the closing quote. Every refused character becomes a space, and the
+ * result is what both `@font-face` and the font stack name, so the two agree. A
+ * sanitized name also satisfies {@link isUsableFontFamilyName} unchanged.
  * @param declared - family name as the font declares it.
  * @returns the usable name, empty when nothing survives.
  */
 export function sanitizeFamilyName(declared: string): string {
   let cleaned = ''
   for (const character of declared) {
-    const code = character.codePointAt(0) ?? 0
-    cleaned += code < 0x20 || code === 0x7f || '{;}<>\'"'.includes(character) ? ' ' : character
+    cleaned += isUnsafeFamilyNameCharacter(character) ? ' ' : character
   }
   return cleaned.replaceAll(/\s+/g, ' ').trim()
 }
 
 /**
- * Extract the family names a font file declares.
- *
- * The extension allowlist only narrows what is offered; this parse is what
- * decides whether the bytes really are a font. A collection reports one entry
- * per contained face.
+ * Extract the family names a font file declares. The extension allowlist only
+ * narrows what is offered; this parse decides whether the bytes are a font. A
+ * collection reports one entry per contained face.
  * @param bytes - complete file contents. WOFF and WOFF2 are read through the
- * decompression fontkit already performs; the caller needs no container step.
+ * decompression fontkit performs; the caller needs no container step.
  * @returns declared family names in face order, deduplicated and reduced to
- * {@link sanitizeFamilyName}. The tuple type carries the non-emptiness the
- * guard below proves, so no caller re-checks it.
- * @throws {TypeError} when the bytes are not a font this build can read, or
- * when no face declares a usable family name. Callers treat this as the
- * rejection reason for an upload and as a skip for a scanned file.
+ * {@link sanitizeFamilyName}. The tuple type carries the non-emptiness proved
+ * below.
+ * @throws {TypeError} when the bytes are not a font this build can read, or when
+ * no face declares a usable family name. An upload reports this as its rejection
+ * reason; a scan skips the file.
  */
 export function readFontFamilies(bytes: Buffer): readonly [string, ...string[]] {
   const font = create(bytes)

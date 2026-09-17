@@ -1,12 +1,15 @@
 /**
  * The `ui-font-family` settings section: the persisted font selection both
- * halves read. The Host registers the section and boots the initial stack from
- * it before the shell mounts; the browser renders the row and projects every
- * later change.
+ * halves read, and the rule deciding which family names it may carry. The Host
+ * registers the section and boots the initial stack from it before the shell
+ * mounts; the browser renders the row and projects every later change.
+ *
+ * This module imports nothing: the browser half reaches it for these constants,
+ * so anything added here is bundled into the page. The schema lives in
+ * `font-settings-schema.ts`, which only the Host half loads.
  * @module dsh-plugin-ui-font-family/font-settings
  */
 
-import z from '@deepseek-ai/schemastery'
 import { DEFAULT_FONT_PRESET_ID, isFontPresetId } from './font-presets.ts'
 
 /** Settings namespace owned by this plugin; lower-case and hyphenated by contract. */
@@ -50,24 +53,60 @@ export const DEFAULT_FONT_SETTINGS: FontSettings = Object.freeze({
 })
 
 /**
- * Schema of `ui-font-family`. Defaults live here so a document that omits the
- * section, or omits one field, still resolves to a usable selection.
+ * Characters that end the string, declaration, or script element a family name
+ * is written into.
+ *
+ * A family name reaches two text sinks this plugin builds by hand: a quoted CSS
+ * string (`@font-face` and the installed stack) and a JSON string inside the
+ * served body script. There, `{`, `}`, and `;` end a declaration, `'` and `"`
+ * end the quoted string, `\` escapes whatever follows, `<` opens markup, and
+ * `</script` closes the served element. Control characters, including a
+ * newline, end a CSS string regardless of quoting.
  */
-export const FontSettingsSchema: z<FontSettings> = z.object({
-  [FONT_SOURCE_FIELD]: z.union([...FONT_SOURCES]).default(DEFAULT_FONT_SOURCE),
-  [FONT_ID_FIELD]: z.string().default(DEFAULT_FONT_PRESET_ID),
-})
+const UNSAFE_FAMILY_CHARACTERS = '{;}<>\'"\\'
 
 /**
- * Reject a resolved section this plugin could not act on: a selection with no
- * name, or a preset id this build does not ship.
+ * Judge one character of a family name. The gate on a stored selection and the
+ * cleaner applied to a name table both read this rule, so the two cannot drift
+ * apart on what is writable.
+ * @param character - one character, read as a code point by the caller.
+ * @returns whether a family name carrying it could not be written safely.
+ */
+export function isUnsafeFamilyNameCharacter(character: string): boolean {
+  // The first UTF-16 unit decides this: every code point at or below U+009F is
+  // one unit, and a surrogate half of anything above it is never a control.
+  const unit = character.charCodeAt(0)
+  const control = unit < 0x20 || (unit >= 0x7f && unit <= 0x9f)
+  return control || UNSAFE_FAMILY_CHARACTERS.includes(character)
+}
+
+/**
+ * Judge a family name a settings document asks the plugin to install. A
+ * `system` selection is a CSS family name the Host cannot verify, so this rule
+ * is what keeps an unsafe name out of both sinks at the write rather than at the
+ * next page render.
+ * @param name - candidate family name.
+ * @returns whether the name may be persisted as a `system` selection.
+ */
+export function isUsableFontFamilyName(name: string): boolean {
+  if (name === '' || name !== name.trim()) return false
+  for (const character of name) {
+    if (isUnsafeFamilyNameCharacter(character)) return false
+  }
+  return true
+}
+
+/**
+ * Reject a resolved section this plugin could not act on: no name, a preset id
+ * this build does not ship, or a `system` family name that cannot be written
+ * into the stylesheet and the bootstrap row.
  *
- * The settings service reports a rejected section and keeps the last good
- * value, so a hand-edited document cannot leave the plugin holding a dangling
- * selection. The browser re-reads the same judgement through the same service,
- * so the row never offers a state the Host would refuse.
+ * The settings service reports a rejected section, keeps the last good value,
+ * and refuses a write that resolves to one, so neither a hand-edited document
+ * nor a client write leaves the plugin holding a selection it would have to
+ * sanitize before serving.
  * @param settings - the resolved section, schema-valid by construction.
- * @throws {TypeError} when the selection names no font this plugin can resolve.
+ * @throws {TypeError} when the selection names no font this plugin can serve.
  */
 export function validateFontSettings(settings: FontSettings): void {
   if (settings.id === '') {
@@ -75,5 +114,10 @@ export function validateFontSettings(settings: FontSettings): void {
   }
   if (settings.source === 'preset' && !isFontPresetId(settings.id)) {
     throw new TypeError(`${FONT_SETTINGS_NAMESPACE}.${FONT_ID_FIELD} names no shipped font preset: "${settings.id}"`)
+  }
+  if (settings.source === 'system' && !isUsableFontFamilyName(settings.id)) {
+    throw new TypeError(
+      `${FONT_SETTINGS_NAMESPACE}.${FONT_ID_FIELD} is not a usable CSS family name: "${settings.id}"`,
+    )
   }
 }

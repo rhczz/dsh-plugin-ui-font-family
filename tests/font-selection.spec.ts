@@ -35,6 +35,12 @@ describe('quoteFontFamily', () => {
   it('escapes a quote inside the name instead of ending the string early', () => {
     expect(quoteFontFamily("O'Brien Sans")).toBe("'O\\'Brien Sans'")
   })
+
+  it('escapes a backslash instead of letting it escape the closing quote', () => {
+    // `'Evil\'` is an unterminated string: the backslash takes the quote meant
+    // to close it, and the declarations after it go with it.
+    expect(quoteFontFamily('Evil\\')).toBe("'Evil\\\\'")
+  })
 })
 
 describe('composeFontStack', () => {

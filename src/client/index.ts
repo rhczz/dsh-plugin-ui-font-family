@@ -1,13 +1,12 @@
 /**
- * Browser half of the font family plugin. It binds this feature's settings
- * namespace, owns the single runtime that projects the chosen font onto
- * `--dsw-font-family`, and registers the Font row into the settings General
- * section — the font feature owns its own settings surface, next to the
- * Appearance and Font size rows it sits between.
+ * Browser half of the font family plugin. It binds the feature's settings
+ * namespace, owns the runtime that projects the chosen font onto
+ * `--dsw-font-family`, and registers the Font row in the General settings
+ * section, between the Appearance and Font size rows.
  *
- * The settings namespace itself is registered by the Host half; this half only
- * consumes it, so a deployment that loads the plugin before any browser
- * connects still resolves a font for the bootstrap row.
+ * The settings namespace is registered by the Host half; this half consumes it,
+ * so a deployment that loads the plugin before any browser connects still
+ * resolves a font for the bootstrap row.
  * @module dsh-plugin-ui-font-family/client
  */
 
@@ -74,7 +73,7 @@ export function apply(ctx: ClientContext): void {
     return {
       select: (source, id) => { runtime.select(source, id) },
       reset: () => { runtime.reset() },
-      reload: () => { runtime.reloadCatalog() },
+      reload: (options) => { runtime.reloadCatalog(options) },
       upload: (file) => { runtime.upload(file) },
       remove: (id) => { runtime.remove(id) },
     }
@@ -83,9 +82,7 @@ export function apply(ctx: ClientContext): void {
     name: 'settings.general.item',
     id: 'font-family',
     // Between the font-size row (11, owned by ui-theme) and the transcript-view
-    // row (12, owned by ui-chat). Those two orders are taken, so the row sits in
-    // the half step between them, which is where "the font size, then the font"
-    // reads.
+    // row (12, owned by ui-chat): "the font size, then the font".
     order: 11.5,
     store,
     locale: FONT_LOCALE_NAMESPACE,

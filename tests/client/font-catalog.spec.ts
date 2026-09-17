@@ -20,6 +20,7 @@ const BODY = {
   system: ['Georgia'],
   systemUnavailable: null,
   uploaded: [{ id: 'alpha-1a2b3c4d.ttf', family: 'Alpha' }],
+  maxUploadBytes: 20 * 1024 * 1024,
 }
 
 /** Every request the module made, in call order. */
@@ -64,12 +65,14 @@ afterEach(() => {
 
 describe('the empty catalogue', () => {
   it('claims no directory, no installed fonts, and no refusal yet', () => {
-    // A read that has not happened must not be reported as a Host refusal.
+    // A read that has not happened must not be reported as a Host refusal, and
+    // an unread limit is unknown rather than zero.
     expect(EMPTY_FONT_CATALOG).toEqual({
-      directory: '',
+      directory: null,
       system: null,
       systemUnavailable: null,
       uploaded: [],
+      maxUploadBytes: undefined,
     })
   })
 })
@@ -84,7 +87,28 @@ describe('reading the catalogue', () => {
       system: ['Georgia'],
       systemUnavailable: null,
       uploaded: [{ id: 'alpha-1a2b3c4d.ttf', family: 'Alpha' }],
+      maxUploadBytes: 20 * 1024 * 1024,
     })
+  })
+
+  it('asks the Host to scan the installed fonts again when the read says so', async () => {
+    const calls = stubFetch(() => response(BODY))
+    await fetchFontCatalog(new AbortController().signal, { system: true })
+    expect(calls[0]?.url).toBe(`${FONT_CATALOG_ROUTE}?system=refresh`)
+  })
+
+  it('does not ask for a scan on an ordinary read', async () => {
+    // Every read but the user's own rescan takes the Host's cached list: the
+    // scan reads every installed font file.
+    const calls = stubFetch(() => response(BODY))
+    await fetchFontCatalog(new AbortController().signal, {})
+    expect(calls[0]?.url).toBe(FONT_CATALOG_ROUTE)
+  })
+
+  it('carries a directory the Host withheld as no directory', async () => {
+    stubFetch(() => response({ ...BODY, fontDir: null }))
+    const catalog = await fetchFontCatalog(new AbortController().signal)
+    expect(catalog.directory).toBeNull()
   })
 
   it('carries the reason the installed fonts are missing', async () => {
@@ -129,6 +153,7 @@ describe('reading the catalogue', () => {
   })
 
   it('names a transport failure that was not an Error', async () => {
+    // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- a transport that rejects with a non-Error is the scenario.
     vi.stubGlobal('fetch', () => Promise.reject('offline'))
     const failure = await fetchFontCatalog(new AbortController().signal).catch((error: unknown) => error)
     expect((failure as FontRequestError).message).toBe('offline')

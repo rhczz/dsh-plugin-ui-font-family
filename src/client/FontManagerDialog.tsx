@@ -7,8 +7,12 @@
 
 import { useRef, useState } from 'react'
 import clsx from 'clsx'
-import { Button, IconPlusOutline16, IconTrashOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button,
+  IconPlusOutline16,
+  IconTrashOutline16,
+  Modal,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { FontUploadSummary } from '../font-api.ts'
 import { FONT_FILE_EXTENSIONS } from '../font-formats.ts'
@@ -24,8 +28,8 @@ export interface FontManagerDialogProps {
   open: boolean
   /** Row translator, passed down from the registering component. */
   t: TranslateNS<typeof FONT_LOCALE_NAMESPACE>
-  /** Absolute directory uploaded fonts live in, shown so a user can copy files there. */
-  directory: string
+  /** Absolute directory uploaded fonts live in, or null when the Host withheld it. */
+  directory: string | null
   /** Fonts already stored. */
   uploaded: readonly FontUploadSummary[]
   /** Whether an upload or deletion is in flight. */
@@ -71,8 +75,13 @@ export function FontManagerDialog({
           <Button variant="outline" onClick={onClose}>{t('manager.close')}</Button>
         )}
       >
-        <p className={css.description}>{t('manager.description')}</p>
-        <code className={css.path}>{directory}</code>
+        {/* The directory is named only to a page on the machine holding it:
+            copied files are a local route into the catalogue, and a path the
+            reader cannot reach says nothing but where the Host keeps its home. */}
+        <p className={css.description}>
+          {directory === null ? t('manager.descriptionRemote') : t('manager.description')}
+        </p>
+        {directory !== null && <code className={css.path}>{directory}</code>}
 
         <div
           className={clsx(css.dropzone, dragging && css.dropzoneActive)}
@@ -130,29 +139,31 @@ export function FontManagerDialog({
           )}
       </Modal>
 
-      <Modal
-        open={pending !== undefined}
-        onClose={() => { setPending(undefined) }}
-        title={t('confirm.title')}
-        closeLabel={t('confirm.cancel')}
-        description={t('confirm.description')}
-        footer={(
-          <>
-            <Button variant="outline" onClick={() => { setPending(undefined) }}>{t('confirm.cancel')}</Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                if (pending !== undefined) onRemove(pending.id)
-                setPending(undefined)
-              }}
-            >
-              {t('confirm.confirm')}
-            </Button>
-          </>
-        )}
-      >
-        <div className={css.confirmTarget}>{pending?.family ?? ''}</div>
-      </Modal>
+      {pending === undefined ? null : (
+        <Modal
+          open
+          onClose={() => { setPending(undefined) }}
+          title={t('confirm.title')}
+          closeLabel={t('confirm.cancel')}
+          description={t('confirm.description')}
+          footer={(
+            <>
+              <Button variant="outline" onClick={() => { setPending(undefined) }}>{t('confirm.cancel')}</Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  onRemove(pending.id)
+                  setPending(undefined)
+                }}
+              >
+                {t('confirm.confirm')}
+              </Button>
+            </>
+          )}
+        >
+          <div className={css.confirmTarget}>{pending.family}</div>
+        </Modal>
+      )}
     </>
   )
 }

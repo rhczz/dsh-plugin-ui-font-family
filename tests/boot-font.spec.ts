@@ -88,6 +88,21 @@ describe('the font bootstrap row', () => {
     expect(installed()).toBe(normalizeStack(`'O\\'Brien Sans', ${HARNESS_STACK}`))
   })
 
+  it('cannot be closed by a family name that carries markup', () => {
+    // The row is an inline `<script>`: whatever the settings document holds,
+    // the element has to still be a script when the page parses it. Escaping
+    // `<` is what the index renderer does for its own value rows too.
+    const injection = bootFontInjection("'a</script><img src=x onerror=alert(1)>'")
+    expect(injection.text).not.toContain('</script')
+    expect(injection.text).toContain('\\u003c')
+  })
+
+  it('installs the same families after the escape, so the name still works', () => {
+    declareHarnessStack(HARNESS_STACK)
+    run("'a<b>'")
+    expect(installed()).toBe(normalizeStack(`'a<b>', ${HARNESS_STACK}`))
+  })
+
   it('names the same property the browser half projects', () => {
     expect(bootFontInjection('x').text).toContain(JSON.stringify(FONT_FAMILY_PROPERTY))
   })

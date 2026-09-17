@@ -36,7 +36,7 @@ updates:
       - dependency-name: immer
         update-types: ['version-update:semver-major']
       # The host packages have to be the version line the mounted dsh ships;
-      # moving them is a deliberate step, documented in DEVELOPING.md.
+      # moving them is a deliberate step, documented in the README Dev Note.
       - dependency-name: '@deepseek-ai/*'
         update-types: ['version-update:semver-major', 'version-update:semver-minor']
       # The compiler and its type definitions track the host's too.

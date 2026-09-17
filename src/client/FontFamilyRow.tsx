@@ -1,11 +1,10 @@
 /**
  * Font family preference row registered into the General section item slot:
- * title + description + a selector pill that opens the font picker.
+ * title, description, and a selector pill that opens the font picker.
  *
  * The pill is drawn in the chosen font, so the row previews the selection
- * without any extra sample text. Choosing and managing are separate dialogs:
- * picking is frequent and needs a searchable list, while uploading and
- * deleting are rare and belong behind their own entry point.
+ * without sample text. Picking is frequent and needs a searchable list;
+ * uploading and deleting are rare and have their own dialog.
  * @module dsh-plugin-ui-font-family/client/FontFamilyRow
  */
 
@@ -20,7 +19,8 @@ import type { FontSource } from '../font-settings.ts'
 import { FontManagerDialog } from './FontManagerDialog.tsx'
 import { FontPickerDialog } from './FontPickerDialog.tsx'
 import { FONT_LOCALE_NAMESPACE } from './locales.ts'
-import type { FontNotice } from './font-runtime.ts'
+import type { FontCatalogReadOptions } from './font-catalog.ts'
+import { isFontNoticeFailure, type FontNotice } from './font-runtime.ts'
 import type { createFontRowStore } from './settings-store.ts'
 import css from './FontFamilyRow.module.css'
 
@@ -68,8 +68,13 @@ export interface FontFamilyRowInjected {
   select: (source: FontSource, id: string) => void
   /** Restore the profile's default font. */
   reset: () => void
-  /** Read the font catalogue again. */
-  reload: () => void
+  /**
+   * Read the catalogue again.
+   * @param options - what to ask the Host for beyond the stored fonts; the
+   * retry action and the picker's rescan both ask for the installed fonts to
+   * be read again.
+   */
+  reload: (options?: FontCatalogReadOptions) => void
   /** Store one font file and select it. */
   upload: (file: File) => void
   /** Delete one stored font. */
@@ -107,8 +112,10 @@ export function FontFamilyRow({ t, select, reset, reload, upload, remove, useSto
 
   const label = selectionLabel(t, source, id, uploaded)
   const triggerStyle: CSSProperties = stack === '' ? {} : { fontFamily: stack }
-  const failed = notice === 'uploadFailed' || notice === 'removeFailed'
-    || notice === 'settingsFailed' || notice === 'tooLarge'
+  const failed = isFontNoticeFailure(notice)
+  // The retry control and the picker's rescan ask the Host for the same thing:
+  // a font installed on this machine is a change no request can observe.
+  const readInstalled = (): void => { reload({ system: true }) }
 
   return (
     <div className={css.row}>
@@ -131,7 +138,7 @@ export function FontFamilyRow({ t, select, reset, reload, upload, remove, useSto
           <div className={css.noticeFailed}>
             {t('notice.loadFailed')}
             {` · ${catalogError}`}
-            <button type="button" className={css.retry} onClick={reload}>
+            <button type="button" className={css.retry} onClick={readInstalled}>
               <IconRefreshOutline14 />
               {t('action.retry')}
             </button>
@@ -162,6 +169,7 @@ export function FontFamilyRow({ t, select, reset, reload, upload, remove, useSto
         harnessStack={harnessStack}
         onSelect={select}
         onReset={reset}
+        onRescan={readInstalled}
         onManage={() => { setPicking(false); setManaging(true) }}
         onClose={() => { setPicking(false) }}
       />

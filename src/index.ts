@@ -1,12 +1,12 @@
 /**
- * Host half of `dsh-plugin-ui-font-family`. It owns the persisted selection,
- * the two font catalogues, the HTTP routes the settings page uses, and the
- * bootstrap row that installs the chosen font before the shell mounts.
+ * Host half of `dsh-plugin-ui-font-family`: the persisted selection, the two
+ * font catalogues, the HTTP routes the settings page calls, and the bootstrap
+ * row that installs the chosen font before the shell mounts.
  *
- * This module is also what the client module system discovers: the Loader
- * entry pointing here leads to the nearest `package.json`, whose `dsh.client`
- * and `exports["./client"]` name the browser half. A Loader entry that does
- * not reach this module therefore mounts no browser half either.
+ * The client module system discovers this module: the Loader entry pointing
+ * here leads to the nearest `package.json`, whose `dsh.client` and
+ * `exports["./client"]` name the browser half. An entry that does not reach
+ * this module mounts no browser half either.
  * @module dsh-plugin-ui-font-family
  */
 
@@ -22,11 +22,11 @@ import { registerFontRoutes } from './font-routes.ts'
 import {
   DEFAULT_FONT_SETTINGS,
   FONT_SETTINGS_NAMESPACE,
-  FontSettingsSchema,
   validateFontSettings,
   type FontSettings,
 } from './font-settings.ts'
-import { resolveFontProjection, UNREAD_FONT_CATALOGUES, type FontCatalogues } from './font-selection.ts'
+import { FontSettingsSchema } from './font-settings-schema.ts'
+import { resolveFontProjection } from './font-selection.ts'
 import { platformFontDirs, SystemFontIndex } from './system-fonts.ts'
 import { USER_FONT_DIR_NAME, UserFontDirectory } from './user-fonts.ts'
 
@@ -57,7 +57,7 @@ export interface Config {
 }
 
 /** Fully resolved plugin parameters; defaulting happens here, never inline. */
-export interface ResolvedSpec {
+interface ResolvedSpec {
   /** Absolute user font directory. */
   fontDir: string
   /**
@@ -123,48 +123,61 @@ export function apply(ctx: Context, config: Config = {}): void {
     ? undefined
     : new SystemFontIndex(spec.systemFontDirs, ctx.logger)
 
+  // Create the directory at load so a misconfigured path fails there rather
+  // than at the first upload.
+  void userFonts.ensure().catch((error: unknown) => {
+    ctx.logger.warn(`ui-font-family: could not read the user font directory ${spec.fontDir}: ${String(error)}`)
+  })
+
   // The bootstrap row is built during a synchronous index render, which cannot
-  // await a directory read. The uploaded catalogue is therefore kept warm and
-  // refreshed after every write; a render arriving before the first read
-  // simply contributes no row.
-  let catalogues: FontCatalogues = UNREAD_FONT_CATALOGUES
-  const refreshUserFonts = (): void => {
-    void userFonts.ensure()
-      .then(async () => userFonts.families())
-      .then((uploaded) => { catalogues = { uploaded } })
-      .catch((error: unknown) => {
-        ctx.logger.warn(`ui-font-family: could not read the user font directory ${spec.fontDir}: ${String(error)}`)
-      })
+  // await a file read, so the family of the selected stored font is resolved
+  // before the render that needs it. Only selected ids are read.
+  const bootFamilies = new Map<string, string | undefined>()
+  let currentSettings: () => FontSettings = () => spec.defaultFamily
+
+  /** Read the family of the selected stored font, once per selection. */
+  const resolveBootFamily = (): void => {
+    const settings = currentSettings()
+    if (settings.source !== 'upload' || bootFamilies.has(settings.id)) return
+    const id = settings.id
+    // Claim the id before the read, so a repeated change reads the file once.
+    bootFamilies.set(id, undefined)
+    void userFonts.familyOf(id).then((family) => { bootFamilies.set(id, family) })
   }
-  refreshUserFonts()
+
+  /** Forget what earlier reads learned, so the next change reads again. */
+  const forgetBootFamily = (): void => {
+    bootFamilies.clear()
+    resolveBootFamily()
+  }
+
+  // The installed-font scan is not warmed here: only a request from this
+  // machine can be answered with it.
 
   // The composition entry supplies the section's base layer, so a profile can
   // pin a house font that every user choice overrides and a reset returns to.
-  let currentSettings: () => FontSettings = () => spec.defaultFamily
   ctx.inject(['settings'], (settingsCtx) => {
     settingsCtx.settings.installSection(settingsCtx, FONT_SETTINGS_NAMESPACE, FontSettingsSchema, spec.defaultFamily, {
       setSource: (current) => { currentSettings = current },
-      // The bootstrap row resolves at render time from `currentSettings`, so a
-      // committed change needs no cached derivation re-judged here.
-      onChange: () => {},
+      // The service calls this at attach and after every committed change,
+      // which is where the selected stored font is read: by the time a page
+      // renders, that family is already known.
+      onChange: resolveBootFamily,
       validate: validateFontSettings,
     })
   })
 
   ctx.on('webserver/index-inject', (table) => {
-    const uploaded = catalogues.uploaded
-    // The declarations are independent of what is selected: they are what makes
-    // a stored font paintable at first paint, instead of one client round trip
-    // later. The browser adopts this same element for the fonts it uploads.
-    if (uploaded !== undefined && uploaded.size > 0) {
-      table.push({ kind: 'style', text: fontFaceCss(uploaded) })
-    }
-    const projection = resolveFontProjection(currentSettings(), catalogues)
-    // `unresolved` means a stored font is selected while the catalogue has not
-    // been read; `harness` means the selection asks for the harness's own font.
-    // Neither contributes a row, and both leave the harness stack in place for
-    // this render rather than installing a stack the render cannot justify.
+    const settings = currentSettings()
+    // Only the selected stored font can paint the first frame. The browser half
+    // declares the rest from the catalogue it reads on mount.
+    const family = settings.source === 'upload' ? bootFamilies.get(settings.id) : undefined
+    const uploaded = family === undefined ? undefined : new Map([[settings.id, family]])
+    const projection = resolveFontProjection(settings, { uploaded })
+    // `unresolved` and `harness` both leave the harness stack in place: neither
+    // family is one this render can justify installing.
     if (projection.kind !== 'families') return
+    if (uploaded !== undefined) table.push({ kind: 'style', text: fontFaceCss(uploaded) })
     table.push(bootFontInjection(projection.families))
   })
 
@@ -172,9 +185,10 @@ export function apply(ctx: Context, config: Config = {}): void {
     userFonts,
     systemFonts,
     maxUploadBytes: spec.maxUploadBytes,
-    onCatalogChanged: refreshUserFonts,
+    onCatalogChanged: forgetBootFamily,
   })
 }
 
-export { FONT_SETTINGS_NAMESPACE, FontSettingsSchema } from './font-settings.ts'
+export { FONT_SETTINGS_NAMESPACE } from './font-settings.ts'
+export { FontSettingsSchema } from './font-settings-schema.ts'
 export type { FontSettings, FontSource } from './font-settings.ts'

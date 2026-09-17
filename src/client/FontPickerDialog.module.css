@@ -35,6 +35,28 @@
   padding-top: 4px;
 }
 
+/* The installed-font group carries the rescan action on its label line: a font
+ * installed on this machine is the one change no request can observe. */
+.groupLabelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rescan {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--dsw-alias-brand-primary);
+  cursor: pointer;
+}
+
+.rescan:hover {
+  text-decoration: underline;
+}
+
 .option {
   display: flex;
   align-items: center;

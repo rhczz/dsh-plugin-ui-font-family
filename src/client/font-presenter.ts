@@ -1,12 +1,10 @@
 /**
  * The single writer of this plugin's font token layer.
  *
- * The write itself belongs to the harness: `ctx.theme.overrideTokens` is the
- * theme service's published way to stack a token layer over the active theme,
- * and ui-layout's theme presenter is what puts it on the document. This class
- * only decides the value — the chosen families placed ahead of the stack the
- * harness declares for itself — and keeps that decision idempotent, because
- * the theme service keeps one layer per source and replaces it on every call.
+ * The write belongs to the theme service (`ctx.theme.overrideTokens`), which
+ * keeps one layer per source and replaces it on every call; ui-layout's
+ * presenter puts the resolved tokens on the document. This class decides only
+ * the value: the chosen families ahead of the harness's own stack.
  * @module dsh-plugin-ui-font-family/client/font-presenter
  */
 
@@ -34,17 +32,19 @@ export class FontPresenter {
   }
 
   /**
-   * @returns the stack this plugin installed; empty while the harness's own
-   * stack stands.
+   * Read the stack this plugin installed.
+   * @returns the installed stack; empty while the harness's own stack stands.
    */
   current(): string {
     return this.installed
   }
 
   /**
-   * @returns the stack the harness declares for itself, or empty before the
-   * first {@link apply}. Callers previewing a font append this so the preview
-   * draws the same faces an installed stack would.
+   * Read the stack the harness declares for itself.
+   *
+   * Callers previewing a font append this, so a preview draws the same faces an
+   * installed stack would.
+   * @returns the harness stack, or empty before the first {@link apply}.
    */
   harnessStack(): string {
     return this.base
@@ -55,7 +55,7 @@ export class FontPresenter {
    * harness's own font.
    *
    * The layer is retracted before the harness stack is read, so the value
-   * revealed is the theme's declaration rather than this plugin's own previous
+   * revealed is the theme's declaration rather than this plugin's previous
    * composition. Both happen in one turn, so no frame is painted in between.
    * @param projection - families to place ahead of the harness stack, or
    * `undefined` to clear the layer.
@@ -85,9 +85,8 @@ export class FontPresenter {
     this.retractLayer?.()
     this.retractLayer = undefined
     this.installed = ''
-    // The bootstrap row is this plugin's own write, made before the theme
-    // service existed. The presenter only retracts what it wrote itself, so
-    // the row has to go here or it would outlive the selection that caused it.
+    // The bootstrap row is this plugin's own earlier write, made before the
+    // theme service existed; the presenter retracts only what it wrote itself.
     document.body.style.removeProperty(FONT_FAMILY_PROPERTY)
   }
 }

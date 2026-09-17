@@ -1,33 +1,29 @@
-# --patch 覆盖层：把本插件插入正在启动的 profile 的条目列表。
-#
-# 用法（在 dsh 仓库根目录执行）：
+# Development overlay for a source checkout of the harness:
 #   pnpm dsh web --patch dsh-plugin-ui-font-family/cordis.yaml --port 3082
 #
-# 说明：
-# - `insert` 往条目列表里新增一行；`id` 是本行的稳定标识，`name` 是模块位置。
-# - `name` 写成相对路径即可：app-boot 会以 **本文件所在目录** 为基准解析成
-#   file:// URL（packages/boot/app-boot/src/index.ts 的 anchorInsertedPluginNames）。
-#   所以这个目录整体挪走也不用改这里。
-# - 指向 src/index.ts 需要 dsh 以 tsx 源码方式启动（仓库内开发就是如此）。
-#   如果本包已经构建/安装，把 name 换成 'dsh-plugin-ui-font-family' 或 './lib/index.js' 即可。
+# `insert` adds the row to the composition. `name` is resolved relative to this
+# file's directory (packages/boot/app-boot/src/index.ts, anchorInsertedPluginNames),
+# so the checkout can move without an edit here. Pointing at src/index.ts requires
+# dsh to run sources through tsx; a built or installed package uses its name or
+# './lib/index.js' instead.
 - insert:
     - id: ui-font-family
       name: './src/index.ts'
-      # 部署相关取值一律走 config，而不是写死在代码里。全部字段都可省略：
+      # Deployment-varying values belong in config; every field is optional.
       #
       # config:
-      #   # 用户上传字体目录；默认 <harness home>/fonts。
+      #   # Uploaded fonts; defaults to <harness home>/fonts.
       #   fontDir: /srv/dsh/fonts
-      #   # 覆盖 harness home 的判定；默认读 $DSH_HOME，再退回 ~/.dsh。
+      #   # Overrides the harness home; defaults to $DSH_HOME, then ~/.dsh.
       #   dshHome: /srv/dsh
-      #   # 追加扫描的系统字体目录，排在平台默认目录之后。
+      #   # Extra directories to scan, after the platform's own.
       #   systemFontDirs:
       #     - /opt/fonts
-      #   # 关闭平台默认字体目录的扫描；不影响上面写明的目录。默认 true。
+      #   # Scans the platform directories; defaults to true.
       #   scanSystemFonts: true
-      #   # 单次上传字节上限；默认 20971520（20 MiB）。
+      #   # Largest accepted upload in bytes; defaults to 20971520 (20 MiB).
       #   maxUploadBytes: 20971520
-      #   # 本 profile 的默认字体，位于用户选择之下；用户「恢复默认」会回到这里。
+      #   # Font used until a user chooses one; "restore default" returns here.
       #   defaultFamily:
       #     source: preset
       #     id: sans

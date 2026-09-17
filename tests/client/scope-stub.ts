@@ -55,8 +55,9 @@ export class FakeScope implements Pick<SettingsScope<FontSettings>, 'getSnapshot
     for (const op of ops) {
       const field = op.path[0]
       if (field === undefined) continue
-      if (op.op === 'set') this.user[field] = op.value
-      else delete this.user[field]
+      this.user = op.op === 'set'
+        ? { ...this.user, [field]: op.value }
+        : Object.fromEntries(Object.entries(this.user).filter(([key]) => key !== field))
     }
     this.revision += 1
     this.snapshot = this.build()
@@ -77,7 +78,7 @@ export class FakeScope implements Pick<SettingsScope<FontSettings>, 'getSnapshot
   private build(): SettingsScopeSnapshot<FontSettings> {
     return {
       status: 'ready',
-      value: { ...this.base, ...this.user } as FontSettings,
+      value: { ...this.base, ...this.user },
       base: this.base,
       user: Object.keys(this.user).length === 0 ? undefined : { ...this.user },
       revision: this.revision,

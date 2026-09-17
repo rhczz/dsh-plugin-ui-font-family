@@ -40,11 +40,11 @@ describe('FontFaceStyle', () => {
     expect(element()).toBeNull()
   })
 
-  it('updates the element it already owns', () => {
+  it('retracts the block it owns when nothing is stored any more', () => {
     const faces = new FontFaceStyle()
     faces.apply(CSS)
     faces.apply('')
-    expect(element()?.textContent).toBe('')
+    expect(element()).toBeNull()
   })
 
   it('adopts the block the Host rendered instead of adding a second one', () => {
@@ -55,10 +55,14 @@ describe('FontFaceStyle', () => {
     expect(rendered.textContent).toBe(CSS)
   })
 
-  it('clears a block the Host rendered once nothing is stored', () => {
+  it('removes a block the Host rendered once nothing is stored', () => {
+    // The Host renders the block only while something is stored, so an empty
+    // catalogue means the element describes nothing; leaving it in the head
+    // would leave a plugin-owned node that no later state accounts for.
     const rendered = hostRendered(CSS)
     new FontFaceStyle().apply('')
-    expect(rendered.textContent).toBe('')
+    expect(element()).toBeNull()
+    expect(rendered.isConnected).toBe(false)
   })
 
   it('does not rewrite an unchanged block', () => {
@@ -86,5 +90,16 @@ describe('FontFaceStyle', () => {
 
   it('is a no-op when there is nothing to remove', () => {
     expect(() => { new FontFaceStyle().dispose() }).not.toThrow()
+  })
+
+  it('leaves an element of another kind carrying the id alone', () => {
+    // The id names this plugin's stylesheet. An element of another type wearing
+    // it is somebody else's node, and removal is not this plugin's to make.
+    const foreign = document.createElement('div')
+    foreign.id = FONT_FACE_STYLE_ID
+    document.head.append(foreign)
+    new FontFaceStyle().dispose()
+    expect(foreign.isConnected).toBe(true)
+    foreign.remove()
   })
 })

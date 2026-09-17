@@ -4,12 +4,11 @@
  * default-restoring action in its footer.
  *
  * A dialog rather than a dropdown menu because the installed-font list runs to
- * hundreds of entries and needs a search field; the menu primitive pins only
- * menu rows below its scroller, so it cannot carry one.
+ * hundreds of entries and needs a search field.
  * @module dsh-plugin-ui-font-family/client/FontPickerDialog
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import clsx from 'clsx'
 import {
   Button,
@@ -29,26 +28,63 @@ import css from './FontPickerDialog.module.css'
 
 /**
  * Installed families listed before the user searches. A machine carries
- * hundreds of them, and listing them all buries the presets and the user's own
- * fonts under a wall of names nobody scrolls; a search is the way in.
+ * hundreds; the presets and uploaded fonts stay visible above them.
  */
 const SYSTEM_PREVIEW_ROWS = 5
 
-/** Installed families listed for one search. */
-const MAX_SYSTEM_ROWS = 60
+/**
+ * Rows one long group lists. A row is drawn in the font it names, so every
+ * listed row is a font request; a search reaches everything behind the cap.
+ */
+const MAX_PREVIEW_ROWS = 60
 
 /**
- * Narrow the installed families to the ones worth listing.
- *
- * Platforms mark private faces with a leading dot (`.AppleSystemUIFont`,
- * `.SF NS`), and sampling those as "the fonts you have" would open the group
- * with names nobody recognises. A search still reaches them by name.
+ * Narrow the installed families to the ones worth listing. Platforms mark
+ * private faces with a leading dot (`.AppleSystemUIFont`); a search reaches
+ * them by name.
  * @param system - families the Host enumerated.
  * @param searching - whether the user has typed a query.
  * @returns the families to rank.
  */
 function offered(system: readonly string[], searching: boolean): readonly string[] {
   return searching ? system : system.filter(name => !name.startsWith('.'))
+}
+
+/**
+ * Explain a list the dialog shortened, rendered above the rows it belongs to.
+ * @param props - text to show.
+ * @returns the note element.
+ */
+function GroupNote({ text }: { text: string }) {
+  return <div className={css.note}>{text}</div>
+}
+
+/**
+ * Explain the installed-font group: unread, refused, empty, or cut short.
+ * @param system - families the Host enumerated, or null when it did not.
+ * @param systemUnavailable - why the Host did not enumerate them.
+ * @param searching - whether the user has typed a query.
+ * @param matched - how many families the query matched.
+ * @param t - row translator.
+ * @returns the note to show, or undefined when the group needs none.
+ */
+function systemGroupNote(
+  system: readonly string[] | null,
+  systemUnavailable: FontSystemUnavailableReason | null,
+  searching: boolean,
+  matched: number,
+  t: TranslateNS<typeof FONT_LOCALE_NAMESPACE>,
+): string | undefined {
+  if (system === null) {
+    if (systemUnavailable === null) return t('system.unread')
+    return systemUnavailable === 'disabled' ? t('system.disabled') : t('system.remote')
+  }
+  if (system.length === 0) return t('system.empty')
+  if (!searching) {
+    return system.length > SYSTEM_PREVIEW_ROWS ? t('system.more', { count: system.length }) : undefined
+  }
+  if (matched === 0) return t('search.empty')
+  return matched > MAX_PREVIEW_ROWS ? t('search.truncated') : undefined
 }
 
 /** One selectable font. */
@@ -61,9 +97,8 @@ interface FontOption {
   label: string
   /**
    * Stack the row is drawn in: the families this option would install, ahead of
-   * the harness's own stack, so a preview draws the same faces the option does
-   * and falls back for Chinese text the way the real thing would. Empty when
-   * the option installs nothing.
+   * the harness's own stack, so the preview falls back exactly as the installed
+   * stack does. Empty when the option installs nothing.
    */
   stack: string
 }
@@ -90,6 +125,8 @@ export interface FontPickerDialogProps {
   onSelect: (source: FontSource, id: string) => void
   /** Restore the profile's default font. */
   onReset: () => void
+  /** Read the installed fonts again, after one was installed on this machine. */
+  onRescan: () => void
   /** Open the management dialog. */
   onManage: () => void
   /** Close the dialog. */
@@ -125,7 +162,8 @@ function OptionRow({ option, selected, onSelect }: {
  * @returns the dialog element tree.
  */
 export function FontPickerDialog({
-  open, t, source, id, system, systemUnavailable, uploaded, harnessStack, onSelect, onReset, onManage, onClose,
+  open, t, source, id, system, systemUnavailable, uploaded, harnessStack,
+  onSelect, onReset, onRescan, onManage, onClose,
 }: FontPickerDialogProps) {
   const [query, setQuery] = useState('')
 
@@ -146,19 +184,26 @@ export function FontPickerDialog({
   const trimmed = query.trim()
   const searching = trimmed !== ''
 
-  const stored: FontOption[] = rankByName(
-    uploaded.map(entry => ({ name: entry.family, id: entry.id })),
-    trimmed,
-  ).map(entry => ({
+  // Ranking reads the whole catalogue, so it is a pure function of what the
+  // dialog was handed rather than work redone on every render: a list of a few
+  // hundred installed families costs about a millisecond to rank.
+  const matchedStored = useMemo(
+    () => rankByName(uploaded.map(entry => ({ name: entry.family, id: entry.id })), trimmed),
+    [uploaded, trimmed],
+  )
+  const stored: FontOption[] = matchedStored.slice(0, MAX_PREVIEW_ROWS).map(entry => ({
     source: 'upload',
     id: entry.id,
     label: entry.name,
     stack: preview(quoteFontFamily(entry.name)),
   }))
 
-  const matched = system === null ? [] : rankByName(offered(system, searching).map(name => ({ name })), trimmed)
-  const installed: FontOption[] = matched
-    .slice(0, searching ? MAX_SYSTEM_ROWS : SYSTEM_PREVIEW_ROWS)
+  const matchedInstalled = useMemo(
+    () => system === null ? [] : rankByName(offered(system, searching).map(name => ({ name })), trimmed),
+    [system, searching, trimmed],
+  )
+  const installed: FontOption[] = matchedInstalled
+    .slice(0, searching ? MAX_PREVIEW_ROWS : SYSTEM_PREVIEW_ROWS)
     .map(entry => ({
       source: 'system',
       id: entry.name,
@@ -166,24 +211,22 @@ export function FontPickerDialog({
       stack: preview(quoteFontFamily(entry.name)),
     }))
 
-  // Four different situations produce a short installed group, and naming the
-  // wrong one would tell the user something false about their own machine.
-  const systemNote = system === null
-    ? systemUnavailable === null
-      ? t('system.unread')
-      : systemUnavailable === 'disabled' ? t('system.disabled') : t('system.remote')
-    : system.length === 0
-      ? t('system.empty')
-      : searching
-        ? matched.length === 0
-          ? t('search.empty')
-          : matched.length > MAX_SYSTEM_ROWS ? t('search.truncated') : undefined
-        : system.length > SYSTEM_PREVIEW_ROWS ? t('system.more', { count: system.length }) : undefined
+  const systemNote = systemGroupNote(system, systemUnavailable, searching, matchedInstalled.length, t)
+  const storedNote = matchedStored.length > MAX_PREVIEW_ROWS ? t('search.truncated') : undefined
 
   const choose = (option: FontOption): void => {
     onSelect(option.source, option.id)
     onClose()
   }
+
+  const row = (option: FontOption) => (
+    <OptionRow
+      key={`${option.source}:${option.id}`}
+      option={option}
+      selected={option.source === source && option.id === id}
+      onSelect={choose}
+    />
+  )
 
   // Nothing long enough to search when neither installed nor stored fonts are
   // available; a search field that cannot narrow anything is dead chrome.
@@ -216,37 +259,22 @@ export function FontPickerDialog({
 
       <div className={css.groups}>
         <div className={css.groupLabel}>{t('group.presets')}</div>
-        {presets.map(option => (
-          <OptionRow
-            key={`${option.source}:${option.id}`}
-            option={option}
-            selected={option.source === source && option.id === id}
-            onSelect={choose}
-          />
-        ))}
+        {presets.map(option => row(option))}
 
         {stored.length > 0 && <div className={css.groupLabel}>{t('group.uploaded')}</div>}
-        {stored.map(option => (
-          <OptionRow
-            key={`${option.source}:${option.id}`}
-            option={option}
-            selected={option.source === source && option.id === id}
-            onSelect={choose}
-          />
-        ))}
+        {storedNote !== undefined && <GroupNote text={storedNote} />}
+        {stored.map(option => row(option))}
 
-        <div className={css.groupLabel}>{t('group.system')}</div>
-        {/* Before the rows, not after: the note is what tells the user the list
-            is short on purpose and how to see the rest of it. */}
-        {systemNote !== undefined && <div className={css.note}>{systemNote}</div>}
-        {installed.map(option => (
-          <OptionRow
-            key={`${option.source}:${option.id}`}
-            option={option}
-            selected={option.source === source && option.id === id}
-            onSelect={choose}
-          />
-        ))}
+        <div className={clsx(css.groupLabel, css.groupLabelRow)}>
+          <span>{t('group.system')}</span>
+          {/* Only an enumerated list can be read again: a Host that declined to
+              enumerate has nothing to rescan and no reason to be asked. */}
+          {system !== null && (
+            <button type="button" className={css.rescan} onClick={onRescan}>{t('action.rescan')}</button>
+          )}
+        </div>
+        {systemNote !== undefined && <GroupNote text={systemNote} />}
+        {installed.map(option => row(option))}
       </div>
     </Modal>
   )

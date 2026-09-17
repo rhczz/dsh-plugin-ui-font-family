@@ -1,18 +1,16 @@
 /**
- * 打包配置：产出客户端模块系统要求的「惰性 CJS 工厂」构件。
+ * Build configuration. It emits the lazy CJS factory the client module system
+ * loads, in place of the shared `clientBundle()` preset: that preset resolves
+ * the package manifest by globbing `packages/<group>/<pkg>/package.json`, which
+ * never matches a package outside the repository.
  *
- * 为什么不能直接用官方共享预设 `clientBundle()`：
- * 那个预设内部要用 globSync 扫 `packages/<组>/<包>/package.json` 查包清单来算 external，
- * 仓库外的包不在这个 glob 里，会直接抛
- * 「tsdown: no packages/<组>/<包>/package.json declares the name ...」。
- * 官方 cookbook（docs/cookbook/adding-a-settings-card.md 的 Packaging 一节）也写明了：
- * 没有对外发布的预设，仓库外的包必须自己复现同样的产物格式。
+ * The artifact holds two requirements; a page fails to load it silently if
+ * either is broken:
  *
- * 产物必须满足两条硬约束，否则页面加载时会静默失败：
- * 1. 执行时只做一件事——把工厂注册进 window.__ModuleLoader__，
- *    业务副作用延迟到该模块第一次被 require（所以用 banner/footer，不是普通入口）。
- * 2. 只能 require 模块表里存在的 specifier；表外的依赖必须内联，
- *    否则 require 当场抛错。
+ * 1. Loading it registers the factory on `window.__ModuleLoader__` and nothing
+ *    else; business side effects wait for the first `require` of the module.
+ * 2. It may `require` only specifiers the shared module table carries. Every
+ *    other dependency is inlined.
  */
 import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
@@ -21,25 +19,26 @@ import { defineConfig, type TsdownPlugin } from 'tsdown'
 import { transform } from 'lightningcss'
 
 /**
- * 产物里注册的模块 id。
- * 必须等于 package.json 的 name：模块表按包名解析这一行，
- * 两边不一致会让别的插件 require 不到你（或反之）。
- * 所以这里从清单读，改包名不用改构建配置。
+ * Module id the artifact registers. It equals the manifest `name`, because the
+ * module table resolves the row by package name; it is read from the manifest
+ * so a rename needs no edit here.
  */
 const PACKAGE_ID: string = JSON.parse(
   readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
 ).name
 
 /**
- * 浏览器端共享模块表（shell 预置的 external 基线）。
- * 与 packages/client/web/src/platform.ts 的 PLATFORM_MODULES 保持一致：
- * 这些 specifier 在产物里保留成 require()，由模块表提供同一份实例；
- * 其余一切（含第三方库）都内联进本 bundle。
+ * Browser module table, kept equal to `PLATFORM_MODULES` in
+ * `packages/client/web/src/platform.ts`. These specifiers stay `require()`
+ * calls in the artifact and resolve to the shell's single instance; everything
+ * else, third-party libraries included, is inlined.
  *
- * 注意：这张表里的名字不要写进 package.json 的 dependencies——
- * 它们是运行时由 shell 提供的，不是本包安装的依赖。
+ * The names here are supplied by the shell at run time, so they are not
+ * dependencies of this package. The build and `tests/package-files.spec.ts`
+ * read this one exported list, so the artifact and the assertion cannot drift
+ * apart.
  */
-const PLATFORM_MODULES: readonly string[] = [
+export const PLATFORM_MODULES: readonly string[] = [
   'react',
   'react/jsx-runtime',
   'react-dom',
@@ -52,30 +51,33 @@ const PLATFORM_MODULES: readonly string[] = [
 ]
 
 /**
- * 虚拟模块 id 前缀。后缀必须是 .mjs 而不是 .css：
- * tsdown 自己的 CSS 管线会拦截以 .css 结尾的 id（那需要额外装 @tsdown/css），
- * 加个后缀把路径绕开它。
+ * Virtual module id prefixes. The suffix is `.mjs` rather than `.css` because
+ * tsdown's own CSS pipeline claims ids ending in `.css` unless `@tsdown/css` is
+ * installed.
  */
 const CSS_MODULE_PREFIX = '\0dsh-plugin-css-module:'
 const CSS_GLOBAL_PREFIX = '\0dsh-plugin-css-global:'
 const CSS_INLINE_PREFIX = '\0dsh-plugin-css-inline:'
 const VIRTUAL_SUFFIX = '.mjs'
 
-/** 把虚拟 id 还原成磁盘上的真实样式表路径。 */
+/** Resolve a virtual id back to the stylesheet path on disk. */
 function assetPath(source: string, importer: string | undefined): string {
   return importer === undefined ? source : resolvePath(dirname(importer), source)
 }
 
 /**
- * 生成「注入样式 + 可选导出类名映射」的 JS 模块源码。
+ * Build the module source that injects one stylesheet and optionally exports
+ * its class-name map.
  *
- * 注入是幂等的：用 data-plugin-css 做标记，重复执行同一个工厂不会插第二份 <style>。
- * 标记同时是本插件的样式归属证明（卸载/排查时按 data-plugin 找）。
- * @param id - 归属插件的包名，写进 data-plugin。
- * @param fileId - 样式表绝对路径，用于生成去重标记。
- * @param css - 已编译好的 CSS 文本。
- * @param classMap - CSS Modules 的「原名 → 哈希名」映射；省略时是全局样式。
- * @returns 该样式表对应的模块源码。
+ * Injection is idempotent: the `data-plugin-css` marker keeps a repeated
+ * factory call from adding a second `<style>`, and it records which plugin owns
+ * the element for unload and diagnosis.
+ * @param id - owning package name, written to `data-plugin`.
+ * @param fileId - absolute stylesheet path, used for the deduplication marker.
+ * @param css - compiled CSS text.
+ * @param classMap - CSS Modules original-to-hashed class names; omitted for a
+ * global stylesheet.
+ * @returns the module source for this stylesheet.
  */
 function styleInjectionModule(
   id: string,
@@ -99,13 +101,12 @@ function styleInjectionModule(
 }
 
 /**
- * 三种样式导入的处理规则，与官方预设语义一致：
- * - `x.module.css` → 默认导出哈希后的类名映射，并注入样式
- * - `x.css`        → 全局样式，只注入
- * - `x.css?inline` → 默认导出编译后的 CSS 文本，不注入（给需要自己管生命周期的场景）
- * 三者都通过 this.addWatchFile 把真实样式表登记进监听图，
- * 否则虚拟 id 会让热更新漏掉样式改动。
- * @returns 三个 rolldown/tsdown 插件。
+ * Handle the three stylesheet import forms the shared preset defines:
+ * `x.module.css` exports hashed class names and injects, `x.css` injects as a
+ * global sheet, and `x.css?inline` exports compiled CSS text without injecting.
+ * Each registers the real stylesheet through `this.addWatchFile`, without which
+ * the virtual id hides stylesheet edits from the watcher.
+ * @returns the tsdown plugins, one per import form.
  */
 function cssPlugins(id: string): TsdownPlugin[] {
   return [
@@ -126,7 +127,7 @@ function cssPlugins(id: string): TsdownPlugin[] {
           cssModules: { pattern: '[hash]_[local]' },
           minify: true,
         })
-        // 排序只为让产物稳定（对象键序随实现变化会让 diff 抖动、缓存失效）。
+        // Sorted so the artifact is stable: the export key order is not.
         const classMap: Record<string, string> = {}
         const entries = Object.entries(cssExports ?? {})
           .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
@@ -166,31 +167,30 @@ function cssPlugins(id: string): TsdownPlugin[] {
   ]
 }
 
-/** 该 specifier 由模块表提供（保持 external），还是内联进 bundle。 */
+/** Whether the module table supplies this specifier, keeping it external. */
 function isPlatformModule(specifier: string): boolean {
   return PLATFORM_MODULES.includes(specifier)
 }
 
 export default defineConfig({
   name: `${PACKAGE_ID}/client`,
-  // 直接从源码构建：仓库外的包不必先让 tsc 产出中间 JS，
-  // 这样 sourcemap 也直接指向 src，浏览器里调试更直观。
+  // Built from source: no tsc intermediate, and the sourcemap points at src.
   entry: { client: 'src/client/index.ts' },
   outDir: 'lib',
   format: 'cjs',
   platform: 'browser',
-  // 类型由 tsc 产出到 lib/ 下；这里开 dts 会把 banner/footer 包进 .d.cts 导致解析失败。
+  // tsc emits the types into lib/; dts here would wrap the banner into a .d.cts.
   dts: false,
   sourcemap: true,
-  // tsc 先跑，它的产物就在同一个 lib/ 目录里，绝不能被清掉。
+  // tsc runs first and emits into the same lib/, so nothing may be cleaned.
   clean: false,
   deps: {
     neverBundle: isPlatformModule,
     alwaysBundle: (specifier: string) => !isPlatformModule(specifier),
   },
-  // 内联进来的第三方库常读这些编译期变量（zustand/immer 读 NODE_ENV，
-  // zustand 还会探测 import.meta.env）。CJS 产物带不了 import.meta，
-  // 不替换就会在工厂执行时抛 ReferenceError。
+  // Inlined libraries read these compile-time variables (zustand and immer read
+  // NODE_ENV, zustand also probes import.meta.env). A CJS artifact carries no
+  // import.meta, so an unreplaced read throws when the factory runs.
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
     'import.meta.env.MODE': JSON.stringify(process.env.NODE_ENV ?? 'production'),
@@ -199,9 +199,8 @@ export default defineConfig({
   plugins: cssPlugins(PACKAGE_ID),
   outputOptions: {
     entryFileNames: 'client.js',
-    // 这三行就是「惰性 CJS 工厂」的全部秘密：
-    // 模块顶层只调用 __ModuleLoader__.load 注册工厂，
-    // 真正的业务代码在 factory 被 require 时才执行。
+    // The lazy factory: the module body registers the factory, and the plugin's
+    // own code runs when the factory is required.
     banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(PACKAGE_ID)}, factory: (require) => {`,
     footer: 'return module.exports; } });',
     intro: 'var module = { exports: {} }; var exports = module.exports;',

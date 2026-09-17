@@ -1,11 +1,12 @@
 /**
- * Browser-side access to the Host font routes. Every call targets this
- * plugin's own prefix; no other plugin's transport is involved.
+ * Browser-side access to the Host font routes under this plugin's own prefix.
  * @module dsh-plugin-ui-font-family/client/font-catalog
  */
 
 import {
   FONT_CATALOG_ROUTE,
+  FONT_CATALOG_SYSTEM_FIELD,
+  FONT_CATALOG_SYSTEM_REFRESH,
   FONT_COLLECTION_ROUTE,
   type FontCatalogResponse,
   type FontErrorResponse,
@@ -16,28 +17,44 @@ import {
 /** Catalogue as the settings row needs it. */
 export interface FontCatalog {
   /**
-   * Absolute directory holding uploaded fonts, so the page can name the place
-   * a hand-copied file belongs. Empty before the first successful read.
+   * Absolute directory holding uploaded fonts, so the page can name where a
+   * hand-copied file belongs. Null before the first successful read, and null
+   * when the Host declined to name it because this page runs elsewhere.
    */
-  directory: string
+  directory: string | null
   /** Installed families, or null when the Host did not enumerate them. */
   system: readonly string[] | null
   /**
-   * Why {@link FontCatalog.system} is null, or null while no read has
-   * succeeded yet — an unread catalogue must not be reported as a refusal.
+   * Why {@link FontCatalog.system} is null, or null while no read has succeeded
+   * yet: an unread catalogue is not a refusal.
    */
   systemUnavailable: FontSystemUnavailableReason | null
   /** Uploaded fonts. */
   uploaded: readonly FontUploadSummary[]
+  /**
+   * Largest upload the Host accepts, or undefined before the first successful
+   * read. The page refuses a larger file with the Host's own number.
+   */
+  maxUploadBytes: number | undefined
 }
 
 /** Catalogue state before anything has been read. */
 export const EMPTY_FONT_CATALOG: FontCatalog = Object.freeze({
-  directory: '',
+  directory: null,
   system: null,
   systemUnavailable: null,
   uploaded: [],
+  maxUploadBytes: undefined,
 })
+
+/** What one catalogue read asks the Host for beyond the stored fonts. */
+export interface FontCatalogReadOptions {
+  /**
+   * Read the installed fonts again instead of answering from the Host's cache.
+   * Only a user action asks for this: no request observes a font installation.
+   */
+  system?: boolean
+}
 
 /** A font request the Host refused, or one that never reached it. */
 export class FontRequestError extends Error {
@@ -99,16 +116,21 @@ async function readBody<T>(response: Response): Promise<T> {
 /**
  * Read the catalogue.
  * @param signal - aborts the request, e.g. when the plugin unloads.
+ * @param options - what this read asks the Host for beyond the stored fonts.
  * @returns the catalogue the row renders.
  * @throws {FontRequestError} when the Host refused or the request failed.
  */
-export async function fetchFontCatalog(signal: AbortSignal): Promise<FontCatalog> {
-  const body = await readBody<FontCatalogResponse>(await send(FONT_CATALOG_ROUTE, { signal }))
+export async function fetchFontCatalog(signal: AbortSignal, options: FontCatalogReadOptions = {}): Promise<FontCatalog> {
+  const query = options.system === true
+    ? `?${FONT_CATALOG_SYSTEM_FIELD}=${FONT_CATALOG_SYSTEM_REFRESH}`
+    : ''
+  const body = await readBody<FontCatalogResponse>(await send(`${FONT_CATALOG_ROUTE}${query}`, { signal }))
   return {
     directory: body.fontDir,
     system: body.system,
     systemUnavailable: body.systemUnavailable,
     uploaded: body.uploaded,
+    maxUploadBytes: body.maxUploadBytes,
   }
 }
 

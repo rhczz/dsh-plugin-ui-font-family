@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { FONT_CATALOG_ROUTE } from '../../src/font-api.ts'
 import { composeFontStack, FONT_FAMILY_PROPERTY } from '../../src/font-selection.ts'
 import { FONT_FACE_STYLE_ID } from '../../src/font-face.ts'
 import { fontPresetFamilies } from '../../src/font-presets.ts'
@@ -16,6 +17,7 @@ const CATALOG = {
   system: ['Georgia', 'Silkscreen'],
   systemUnavailable: null,
   uploaded: [] as { id: string; family: string }[],
+  maxUploadBytes: 20 * 1024 * 1024,
 }
 
 /** One request the runtime sent. */
@@ -64,7 +66,7 @@ function installFetch(answers: HostAnswers = {}): FakeHost {
   const stub = vi.fn(async (input: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     calls.push({ url: input, method })
-    if (input.endsWith('/catalog')) return (current.catalog ?? (() => jsonResponse(CATALOG)))()
+    if (input.startsWith('/api/ui-font-family/catalog')) return (current.catalog ?? (() => jsonResponse(CATALOG)))()
     if (method === 'POST') return (current.upload ?? (() => jsonResponse({ id: 'new.ttf', family: 'New' }, 201)))()
     return (current.remove ?? (() => jsonResponse(undefined, 204)))()
   })
@@ -194,6 +196,20 @@ describe('adopting the settings document', () => {
     runtime.reloadCatalog()
     await settle()
     expect(runtime.getSnapshot().uploaded).toEqual([{ id: 'a.ttf', family: 'Alpha' }])
+  })
+
+  it('asks the Host to scan the installed fonts again only when told to', async () => {
+    const host = installFetch()
+    const { runtime } = mount()
+    await settle()
+    runtime.reloadCatalog({ system: true })
+    await settle()
+    // Every ordinary read takes the Host's cached list; the scan reads every
+    // installed font file.
+    expect(host.calls.at(-1)?.url).toBe(`${FONT_CATALOG_ROUTE}?system=refresh`)
+    runtime.reloadCatalog()
+    await settle()
+    expect(host.calls.at(-1)?.url).toBe(FONT_CATALOG_ROUTE)
   })
 })
 
@@ -364,6 +380,35 @@ describe('uploading a font', () => {
     runtime.upload(file())
     await vi.waitFor(() => { expect(runtime.getSnapshot().notice).toBe('tooLarge') })
   })
+
+  it('refuses a file past the Host limit without reading or sending it', async () => {
+    const host = installFetch({ catalog: () => jsonResponse({ ...CATALOG, maxUploadBytes: 4 }) })
+    const { runtime, scope } = mount()
+    await settle()
+    const oversized = file('far more than four bytes')
+    const read = vi.spyOn(oversized, 'arrayBuffer')
+    runtime.upload(oversized)
+    await settle()
+
+    expect(runtime.getSnapshot().notice).toBe('tooLarge')
+    // The limit is named, so the notice says what the page will accept.
+    expect(runtime.getSnapshot().noticeDetail).toBe('4B')
+    expect(runtime.getSnapshot().busy).toBe(false)
+    expect(read).not.toHaveBeenCalled()
+    expect(host.calls.filter(call => call.method === 'POST')).toEqual([])
+    expect(scope.batches).toEqual([])
+  })
+
+  it('sends a file whose size the catalogue could not state yet', async () => {
+    // An unread catalogue states no limit; the Host still refuses what it will
+    // not store, and the page must not invent a limit of its own.
+    const host = installFetch({ catalog: () => jsonResponse({ ...CATALOG, maxUploadBytes: undefined }) })
+    const { runtime } = mount()
+    await settle()
+    runtime.upload(file('anything'))
+    await vi.waitFor(() => { expect(runtime.getSnapshot().notice).toBe('uploaded') })
+    expect(host.calls.filter(call => call.method === 'POST')).toHaveLength(1)
+  })
 })
 
 describe('deleting a font', () => {
@@ -489,6 +534,7 @@ describe('a failure that is not an Error', () => {
     const refusingScope = {
       getSnapshot: () => scope.getSnapshot(),
       subscribe: (listener: () => void) => scope.subscribe(listener),
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- a scope that rejects with a non-Error is the scenario.
       mutate: () => Promise.reject('write offline'),
     } as unknown as SettingsScope<FontSettings>
     const runtime = new FontRuntime(refusingScope, new FakeTheme().asService())
@@ -539,7 +585,7 @@ describe('the declarations the browser installs', () => {
     await settle()
     host.answer({ catalog: () => jsonResponse(CATALOG) })
     runtime.remove('alpha-1a2b3c4d.ttf')
-    await vi.waitFor(() => { expect(faceBlock()?.textContent).toBe('') })
+    await vi.waitFor(() => { expect(faceBlock()).toBeNull() })
   })
 
   it('leaves the block the Host rendered alone until the catalogue is read', async () => {
@@ -601,18 +647,43 @@ describe('the published snapshot', () => {
   it('adopts a value the scope publishes later', async () => {
     installFetch()
     const scope = new FakeScope({ source: 'preset', id: 'default' })
-    let value: FontSettings | undefined
+    const published: { value?: FontSettings } = {}
     const late = {
-      getSnapshot: () => ({ ...scope.getSnapshot(), value }),
+      getSnapshot: () => ({ ...scope.getSnapshot(), value: published.value }),
       subscribe: (listener: () => void) => scope.subscribe(listener),
       mutate: () => Promise.resolve(),
     } as unknown as SettingsScope<FontSettings>
     const runtime = new FontRuntime(late, new FakeTheme().asService())
     runtime.start()
     await settle()
-    value = { source: 'system', id: 'Georgia' }
+    published.value = { source: 'system', id: 'Georgia' }
     scope.notify()
     expect(runtime.getSnapshot().selection).toEqual({ source: 'system', id: 'Georgia' })
+    runtime.dispose()
+  })
+
+  it('installs no new theme layer when a scope change resolves the same selection', async () => {
+    // The settings document republishes every namespace on any write, so an
+    // unrelated change arrives here as a scope change carrying the selection
+    // already installed; recomposing and rewriting the token set for it would
+    // be work with no visible result.
+    const scope = new FakeScope({ source: 'system', id: 'Georgia' })
+    const theme = new FakeTheme()
+    const install = vi.spyOn(theme, 'overrideTokens')
+    const runtime = new FontRuntime(scope.asScope(), theme.asService())
+    runtime.start()
+    await settle()
+    const installed = install.mock.calls.length
+
+    // A write that leaves this namespace alone still republishes its value.
+    await scope.mutate([])
+    scope.notify()
+    expect(install.mock.calls.length).toBe(installed)
+
+    // A change that does move the selection still installs.
+    await scope.mutate([{ op: 'set', path: ['id'], value: 'Silkscreen' }])
+    expect(install.mock.calls.length).toBe(installed + 1)
+    expect(projected()).toBe(installedFor('Silkscreen'))
     runtime.dispose()
   })
 

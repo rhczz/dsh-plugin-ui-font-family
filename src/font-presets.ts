@@ -14,30 +14,24 @@ export type FontPresetId = typeof FONT_PRESET_IDS[number]
 export const DEFAULT_FONT_PRESET_ID: FontPresetId = 'default'
 
 /**
- * Families each preset names, in CSS `font-family` syntax, with no tail.
+ * Families each preset names, in CSS `font-family` syntax, without a tail.
  *
- * A preset names only what it changes. The stack the harness itself defines is
- * appended when a stack is installed, and it supplies every family this list
- * does not: the platform's own Latin and Chinese faces, and whatever the
- * harness picks in a future release. So a preset never has to restate the
- * harness's choices, and cannot fall behind them.
+ * The installed stack appends the harness's own stack, which supplies every
+ * family these lists omit, so a preset names only what it changes.
  *
- * Two rules shape the lists.
+ * Latin families precede Chinese ones: a face without Chinese glyphs falls
+ * through to the next name, so Latin text keeps the chosen face while Chinese
+ * text reaches the Chinese face behind it. A Chinese face placed first would
+ * take over Latin text too, at metrics the harness's layout was not measured
+ * for.
  *
- * Latin families precede Chinese ones, the order the harness's own stack uses.
- * A family that has no Chinese glyph falls through to the next name, so Latin
- * text keeps the chosen face and Chinese text reaches the Chinese face behind
- * it. The reverse order puts a Chinese face in front of every Latin one, and
- * because the platform's Chinese faces are always installed their Latin
- * glyphs would take over the whole interface, at metrics the harness's layout
- * was not measured for.
+ * No generic family appears here. `serif`, `monospace`, and `sans-serif`
+ * resolve against the installed faces, and the browser ignores every family
+ * written after one, so a generic would discard the harness stack instead of
+ * extending it.
  *
- * No generic family. `serif`, `monospace` and `sans-serif` resolve against the
- * installed faces and the browser ignores every family written after one, so a
- * generic here would discard the harness stack rather than extend it.
- *
- * `default` names nothing, which is what makes it the harness's own font: a
- * stack installed for it could only replace that font with a different one.
+ * `default` names nothing: it selects the harness's own font, which no
+ * installed stack can extend.
  */
 const FONT_PRESET_FAMILIES: Readonly<Record<FontPresetId, string>> = {
   default: '',

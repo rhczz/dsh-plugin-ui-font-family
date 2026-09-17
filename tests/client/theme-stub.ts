@@ -9,7 +9,6 @@
  * @module dsh-plugin-ui-font-family/tests/client/theme-stub
  */
 
-import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { ThemeTokenWriter } from '../../src/client/font-presenter.ts'
 
 /** One token layer's value per palette mode. */
@@ -49,7 +48,7 @@ export class FakeTheme {
 
   /** The service as the presenter's constructor takes it. */
   asService(): ThemeTokenWriter {
-    return this as unknown as Pick<ThemeRuntime, 'overrideTokens'>
+    return this
   }
 
   /** Replace the document's token variables, exactly as the theme presenter does. */

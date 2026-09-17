@@ -51,7 +51,7 @@ describe('FontPresenter', () => {
 
   it('writes the token through the theme service rather than the document', () => {
     // The theme service is the only writer: it owns retraction of the layers it
-    // applied, and one layer per source is what makes a re-apply replace rather
+    // applied, and one layer per source makes a re-apply replace rather
     // than stack. A second writer on the same property would survive teardown.
     const { presenter, theme } = mount()
     presenter.apply('Georgia')

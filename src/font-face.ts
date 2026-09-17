@@ -1,11 +1,9 @@
 /**
- * `@font-face` declarations for the uploaded catalogue.
- *
- * A family name in the CSS stack is only usable once the browser has a source
- * for it, so every stored font needs a rule naming its download route. The Host
- * writes the block into the served page and the browser keeps it current after
- * an upload, both through {@link fontFaceCss}, so the two cannot name different
- * families or different URLs.
+ * `@font-face` declarations for the uploaded catalogue. A family in the CSS
+ * stack is usable only once the browser has a source for it, so every stored
+ * font needs a rule naming its download route. The Host writes the block into
+ * the served page and the browser keeps it current, both through
+ * {@link fontFaceCss}.
  * @module dsh-plugin-ui-font-family/font-face
  */
 
@@ -23,11 +21,9 @@ export const FONT_FACE_STYLE_ID = 'dsh-ui-font-family-face'
 /**
  * Build the declarations for a catalogue.
  *
- * `font-display: swap` keeps text readable in the fallback while a face loads;
- * a settings page that hides its own labels until a font arrives would be worse
- * than a brief swap. No `font-weight` or `font-style` is declared, so the one
- * stored face answers every weight and slant instead of handing bold text back
- * to a different family.
+ * `font-display: swap` keeps text readable in the fallback while a face loads.
+ * No `font-weight` or `font-style` is declared, so one stored face answers every
+ * weight and slant instead of handing bold text to a different family.
  * @param uploaded - family name by stored font id.
  * @returns the CSS text, empty when nothing is stored.
  */

@@ -11,6 +11,21 @@ import type { FontRowSnapshot } from '../../src/client/font-runtime.ts'
 
 type RowInstance = ReturnType<ReturnType<typeof createFontRowStore>['create']>
 
+/**
+ * Click one button a query returned.
+ *
+ * The index is checked rather than asserted away: these queries match two
+ * controls carrying the same label, so the position is the point of the case
+ * and a missing one has to fail as a missing element.
+ * @param buttons - elements the query returned.
+ * @param index - position to click; negative counts from the end.
+ */
+function clickButton(buttons: readonly HTMLElement[], index: number): void {
+  const button = buttons.at(index)
+  if (button === undefined) throw new Error(`no button at index ${index} of ${buttons.length}`)
+  fireEvent.click(button)
+}
+
 /** Stored font the catalogue cases list. */
 const STORED_FONT = { id: 'silkscreen-1a2b3c4d.ttf', family: 'Silkscreen' }
 
@@ -36,7 +51,7 @@ const t = ((key: string, params?: Record<string, unknown>) => {
 function bindStore(instance: RowInstance): FontFamilyRowComponentProps['useStore'] {
   const hook = <T,>(selector: (state: FontRowState) => T): T =>
     useSyncExternalStore(listener => instance.subscribe(listener), () => selector(instance.getSnapshot()))
-  return hook as unknown as FontFamilyRowComponentProps['useStore']
+  return hook
 }
 
 /**
@@ -120,6 +135,27 @@ function openManager(): void {
   fireEvent.click(screen.getByRole('button', { name: zh['action.manage'] }))
 }
 
+/**
+ * Build a stored catalogue of a given length.
+ * @param count - number of entries.
+ * @returns the entries, named so a case can match them by text.
+ */
+function storedFonts(count: number): { id: string; family: string }[] {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `own-${String(index)}.ttf`,
+    family: `Own ${String(index).padStart(2, '0')}`,
+  }))
+}
+
+/**
+ * @returns the labels of the stored-font rows the picker is listing, in order.
+ */
+function listedStored(): string[] {
+  return screen.getAllByRole('button')
+    .map(node => node.textContent ?? '')
+    .filter(text => /^Own \d\d$/.test(text))
+}
+
 /** The surface a font file is dropped onto, read off the field it wraps. */
 function dropzone(): HTMLElement {
   const input = document.querySelector('input[type="file"]')
@@ -176,7 +212,7 @@ describe('the font row', () => {
 
   it('marks a failed outcome apart from a successful one', () => {
     mount({ notice: 'uploadFailed', noticeDetail: 'uploaded bytes are not a font' })
-    expect(screen.getByText(new RegExp(zh['notice.uploadFailed'] as string))).toBeDefined()
+    expect(screen.getByText(new RegExp(zh['notice.uploadFailed']))).toBeDefined()
   })
 
   it('shows a notice that carries no detail on its own', () => {
@@ -204,7 +240,9 @@ describe('the font row', () => {
     const { injected } = mount({ catalog: 'failed', catalogError: 'connect ECONNREFUSED' })
     expect(screen.getByText(/connect ECONNREFUSED/)).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: new RegExp(zh['action.retry']) }))
-    expect(injected.reload).toHaveBeenCalledTimes(1)
+    // A read that failed is also the moment to read the installed fonts again:
+    // the failure may have been the scan itself.
+    expect(injected.reload).toHaveBeenCalledWith({ system: true })
   })
 
   it('keeps quiet about a catalogue it has not read yet', () => {
@@ -221,6 +259,15 @@ describe('the picker the row opens', () => {
     expect(dialog.textContent).toContain(zh['preset.mono'])
     expect(dialog.textContent).toContain('Georgia')
     expect(dialog.textContent).toContain('Silkscreen')
+  })
+
+  it('leaves a preview row unstyled when the harness declares no stack', () => {
+    // Every preview row appends the harness stack. With none declared there is
+    // no tail to append, so the row inherits the row's own font rather than
+    // drawing in a family the document never named.
+    mount({ harnessStack: '', selection: { source: 'preset', id: 'serif' } })
+    fireEvent.click(trigger())
+    expect(screen.getByRole('button', { name: zh['preset.serif'] }).getAttribute('style')).toBeNull()
   })
 
   it('selects a preset and closes', () => {
@@ -275,7 +322,7 @@ describe('the picker the row opens', () => {
     fireEvent.click(trigger())
     const listed = screen.getAllByRole('button').filter(node => /^Font \d\d$/.test(node.textContent ?? ''))
     // A machine carries hundreds of families, and listing them all would bury
-    // the presets and the user's own fonts under names nobody scrolls past.
+    // the presets and the user's own fonts under the installed list.
     expect(listed).toHaveLength(5)
     expect(picker().textContent).toContain(zh['system.more'].replace('{count}', '40'))
   })
@@ -315,7 +362,7 @@ describe('the picker the row opens', () => {
 
     // The serif assertion names a family only that preset's stack carries, so
     // rendering the wrong preset's stack on the row would fail it.
-    expect(drawn(zh['preset.serif'] as string)).toContain('Songti SC')
+    expect(drawn(zh['preset.serif'])).toContain('Songti SC')
     expect(drawn('Georgia')).toContain('Georgia')
     expect(drawn(STORED_FONT.family)).toContain(STORED_FONT.family)
   })
@@ -330,7 +377,7 @@ describe('the picker the row opens', () => {
     })
     fireEvent.click(trigger())
 
-    const style = screen.getByText(zh['preset.default'] as string).getAttribute('style') ?? ''
+    const style = screen.getByText(zh['preset.default']).getAttribute('style') ?? ''
     expect(normalizeStack(style)).toContain(normalizeStack(HARNESS_STACK))
     expect(style).not.toContain(STORED_FONT.family)
   })
@@ -374,6 +421,40 @@ describe('the picker the row opens', () => {
     fireEvent.click(screen.getByRole('button', { name: zh['action.reset'] }))
     expect(injected.reset).toHaveBeenCalledTimes(1)
   })
+
+  it('rescans the installed fonts on request', () => {
+    // A font installed on this machine is a change no request can observe, so
+    // the group listing them carries the action that reads them again.
+    const { injected } = mount({ system: ['Georgia'] })
+    fireEvent.click(trigger())
+    fireEvent.click(screen.getByRole('button', { name: zh['action.rescan'] }))
+    expect(injected.reload).toHaveBeenCalledWith({ system: true })
+  })
+
+  it('offers no rescan when the Host never enumerated the installed fonts', () => {
+    // A remote browser has nothing to rescan, and a disabled scan is not this
+    // page's to turn on.
+    mount({ system: null, systemUnavailable: 'remote' })
+    fireEvent.click(trigger())
+    expect(screen.queryByRole('button', { name: zh['action.rescan'] })).toBeNull()
+  })
+
+  it('lists a bounded number of stored fonts and says the list was cut', () => {
+    // Every row is drawn in its own font, so every listed row is a font file
+    // the browser fetches; a stored catalogue past the cap is not worth
+    // downloading in full.
+    mount({ uploaded: storedFonts(80) })
+    fireEvent.click(trigger())
+    expect(listedStored()).toHaveLength(60)
+    expect(picker().textContent).toContain(zh['search.truncated'])
+  })
+
+  it('reaches a stored font behind that cut by searching for it', () => {
+    mount({ uploaded: storedFonts(80) })
+    fireEvent.click(trigger())
+    fireEvent.change(screen.getByPlaceholderText(zh['search.placeholder']), { target: { value: 'Own 79' } })
+    expect(listedStored()).toEqual(['Own 79'])
+  })
 })
 
 describe('the manager the picker opens', () => {
@@ -391,6 +472,16 @@ describe('the manager the picker opens', () => {
     expect(screen.getByText(zh['uploaded.empty'])).toBeDefined()
   })
 
+  it('describes the directory without naming it when the Host withheld it', () => {
+    // The path is where a font file is copied by hand; a page that cannot reach
+    // that filesystem is told what happens instead of where the Host lives.
+    mount({ directory: null })
+    openManager()
+    const manager = dialog(zh['manager.title'])
+    expect(manager.textContent).toContain(zh['manager.descriptionRemote'])
+    expect(manager.querySelector('code')).toBeNull()
+  })
+
   it('confirms before deleting and reports the font it is about to delete', () => {
     const { injected } = mount({ uploaded: [STORED_FONT] })
     openManager()
@@ -398,7 +489,7 @@ describe('the manager the picker opens', () => {
     expect(injected.remove).not.toHaveBeenCalled()
     const confirm = dialog(zh['confirm.title'])
     expect(confirm.textContent).toContain(STORED_FONT.family)
-    fireEvent.click(within(confirm).getAllByRole('button', { name: zh['confirm.confirm'] })[0] as HTMLElement)
+    clickButton(within(confirm).getAllByRole('button', { name: zh['confirm.confirm'] }), 0)
     expect(injected.remove).toHaveBeenCalledWith(STORED_FONT.id)
   })
 
@@ -410,7 +501,7 @@ describe('the manager the picker opens', () => {
     // The header close control and the footer button carry the same label; the
     // footer is the one a user reaches for.
     const cancels = within(confirm).getAllByRole('button', { name: zh['confirm.cancel'] })
-    fireEvent.click(cancels[cancels.length - 1] as HTMLElement)
+    clickButton(cancels, -1)
     expect(injected.remove).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog', { name: zh['confirm.title'] })).toBeNull()
     // The manager is still open behind it, with the font still listed.
@@ -425,7 +516,7 @@ describe('the manager the picker opens', () => {
     fireEvent.click(screen.getByRole('button', { name: `${zh['action.remove']} ${STORED_FONT.family}` }))
     const confirm = dialog(zh['confirm.title'])
     const cancels = within(confirm).getAllByRole('button', { name: zh['confirm.cancel'] })
-    fireEvent.click(cancels[0] as HTMLElement)
+    clickButton(cancels, 0)
     expect(injected.remove).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog', { name: zh['confirm.title'] })).toBeNull()
   })
@@ -527,7 +618,7 @@ describe('the manager the picker opens', () => {
     // The header close control and the footer button carry the same label and
     // both close the dialog; the footer is the one a user reaches for.
     const closes = within(manager).getAllByRole('button', { name: zh['manager.close'] })
-    fireEvent.click(closes[closes.length - 1] as HTMLElement)
+    clickButton(closes, -1)
     expect(screen.queryByRole('dialog', { name: zh['manager.title'] })).toBeNull()
     expect(picker()).toBeDefined()
   })

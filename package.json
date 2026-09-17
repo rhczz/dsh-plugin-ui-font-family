@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-ui-font-family",
-  "version": "0.3.0",
-  "description": "DeepSeek Harness web plugin: a Font row in the General settings section, with built-in presets, the fonts installed on your machine, and font files you upload",
+  "version": "0.4.0",
+  "description": "DeepSeek Harness web plugin: a Font row in General settings with four built-in presets, the fonts installed on the machine running dsh, and font files this deployment serves to every connected browser",
   "type": "module",
   "license": "MIT",
   "publishConfig": {
@@ -97,7 +97,7 @@
     "micromark-util-classify-character": "^2.0.1",
     "micromark-util-sanitize-uri": "^2.0.1",
     "micromark-util-symbol": "^2.0.1",
-    "oxlint": "^1.76.0",
+    "oxlint": "1.76.0",
     "oxlint-tsgolint": "7.0.2001",
     "react": "^18.2.0",
     "react-dom": "^18.3.1",
@@ -114,7 +114,6 @@
     "lib/client/**/*.d.ts",
     "cordis.patch.yml",
     "README.md",
-    "DEVELOPING.md",
     "assets/*.png"
   ],
   "repository": {

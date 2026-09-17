@@ -1,44 +1,38 @@
 import { coverageConfigDefaults, defineConfig } from 'vitest/config'
 
 /**
- * Test configuration for the plugin. Component specs opt into jsdom with a
- * `// @vitest-environment jsdom` pragma on their first line, so the shared
- * default stays the Node environment the Host-half specs run in.
- *
- * Coverage measures the shipped halves: the specs and their stubs are the
- * instrument, not the artifact, so `tests/` is excluded.
+ * Test configuration. Component specs opt into jsdom with a
+ * `// @vitest-environment jsdom` pragma on their first line, so the default
+ * environment stays the Node one the Host-half specs run in.
  */
 export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.spec.ts', 'tests/**/*.spec.tsx'],
-    // Fixtures are real font binaries read by the specs; they are not tests.
     passWithNoTests: false,
     server: {
       deps: {
         // The class-name primitives import their own `.module.css`. Vitest
         // externalizes node_modules by default, which hands that import to
-        // Node's ESM loader — it rejects the extension. Transforming the
-        // package instead lets Vite stub the stylesheet, which is what the
-        // browser shell replaces with the real one anyway.
+        // Node's ESM loader, and it rejects the extension; transforming the
+        // package lets Vite stub the stylesheet, as the browser shell does.
         inline: ['@deepseek-ai/dsh-client-ui-primitives'],
       },
     },
     coverage: {
-      // Measure the whole shipped source, not only the modules a spec happens
-      // to import, so an uncovered file shows up as a drop rather than as
-      // silence. Stylesheets and ambient declarations carry no executable
-      // code and are not measured.
+      // Measure every shipped source file, not only the ones a spec imports,
+      // so an uncovered file shows up as a drop. Stylesheets and ambient
+      // declarations carry no executable code and are excluded.
       include: ['src/**'],
       exclude: [...coverageConfigDefaults.exclude, 'tests/**', 'src/**/*.module.css', 'src/**/*.d.ts'],
       thresholds: {
+        // Every file, every counter: the harness coverage gate a moved-in
+        // package has to satisfy.
+        perFile: true,
         statements: 100,
+        branches: 100,
         functions: 100,
         lines: 100,
-        // The remainder is spread over one-line guards whose false arm is
-        // unreachable without a hostile Host: font-files, font-routes and the
-        // runtime's abort/error paths.
-        branches: 96,
       },
     },
   },

@@ -1,11 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import { apply, inject } from '../../src/client/index.ts'
 import { FontFamilyRow } from '../../src/client/FontFamilyRow.tsx'
 import { FONT_LOCALE_NAMESPACE, en, zh } from '../../src/client/locales.ts'
-import { createFontRowStore } from '../../src/client/settings-store.ts'
 import { FONT_CATALOG_ROUTE, FONT_COLLECTION_ROUTE } from '../../src/font-api.ts'
 import { FONT_SETTINGS_NAMESPACE } from '../../src/font-settings.ts'
 import { FONT_FAMILY_PROPERTY } from '../../src/font-selection.ts'
@@ -104,7 +102,7 @@ function mount(): Mounted {
  */
 function actionsOf(mounted: Mounted, sync: (snapshot: unknown) => void): Record<string, unknown> {
   const injectActions = mounted.rows[0]?.row.inject as (actions: unknown) => Record<string, unknown>
-  return injectActions({ sync } as unknown as BoundActions<ReturnType<typeof createFontRowStore>['create']>)
+  return injectActions({ sync })
 }
 
 /**
@@ -113,7 +111,7 @@ function actionsOf(mounted: Mounted, sync: (snapshot: unknown) => void): Record<
  * @returns a JSON response carrying that route's body.
  */
 async function hostAnswer(input: string): Promise<unknown> {
-  const url = String(input)
+  const url = input
   const body = url.includes(FONT_COLLECTION_ROUTE) && !url.endsWith(FONT_COLLECTION_ROUTE)
     ? {}
     : url.includes(FONT_CATALOG_ROUTE)
@@ -149,7 +147,7 @@ beforeEach(() => {
   document.head.appendChild(style)
   sent.length = 0
   vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
-    sent.push({ url: String(input), method: init?.method ?? 'GET' })
+    sent.push({ url: input, method: init?.method ?? 'GET' })
     return hostAnswer(input)
   }))
   mounted = mount()
@@ -251,6 +249,13 @@ describe('the plugin body', () => {
     ;(actions.reload as () => void)()
     await vi.waitFor(() => { expect(sent).toHaveLength(2) })
     expect(sent[1]?.url).toContain(FONT_CATALOG_ROUTE)
+  })
+
+  it('forwards the rescan the row asks for, so the installed fonts are read again', async () => {
+    const actions = actionsOf(mounted, vi.fn())
+    ;(actions.reload as (options: { system?: boolean }) => void)({ system: true })
+    await vi.waitFor(() => { expect(sent).toHaveLength(2) })
+    expect(sent[1]?.url).toContain('?system=refresh')
   })
 
   it('stores a file the row uploads, under the collection route', async () => {
